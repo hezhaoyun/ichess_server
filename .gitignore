@@ -1,0 +1,7 @@
+.vscode
+venv
+nohup.out
+*.log
+__pycache__
+**/*.pyc
+**/.DS_Store
