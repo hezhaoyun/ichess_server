@@ -96,7 +96,7 @@ class Game:
                 self.declare_winner(list, "Your opponent has disconnected")
 
     def is_player_connected(self, player):
-        if (player in running.clients_list):
+        if (player in running.players):
             return True
         else:
             self.players.remove(player)
@@ -134,15 +134,15 @@ class Game:
         the_game = 0
         # remove the players from playing list
         for player in self.players:
-            for player_and_game in running.playing_list:
+            for player_and_game in running.playing_games:
                 if (player in player_and_game):
                     game_id = player_and_game[1]
-                    the_game = running.games_list[game_id]
-                    running.playing_list.remove([player, game_id])
+                    the_game = running.games[game_id]
+                    running.playing_games.remove([player, game_id])
                     print(time.strftime("%H:%M ") + "Removed an in-game player from the players' list")
 
         # remove the game from games list
-        running.games_list.remove(the_game)
+        running.games.remove(the_game)
         print(time.strftime("%H:%M") + " Removed a finished game from gamelist")
 
         self.return_to_lobby_after_game()
@@ -157,9 +157,6 @@ class Game:
                 list,
                 "You have been put in the matchmaking lobby again but won't be able to play the same opponent."
             )
-            # maintaining numbers
-            # chess_server.ChessServer.matchmakingplayers = chess_server.ChessServer.matchmakingplayers + 1
-            running.playing_players = running.playing_players - 1
 
         # SPECIAL COMMAND CODE to clients
         for player in self.players:

@@ -5,15 +5,11 @@ from flask_socketio import send
 
 
 class running:
-    connected_players = 0  # number of connected players overall
-    playing_players = 0  # players currently in games
-    match_making_players = 0  # players waiting to be matched for a game
+    players = []  # list of all players connected
+    waiting_players = []  # list of players waiting to be matched
 
-    clients_list = []  # list of all players connected
-    waiting_list = []  # list of players waiting to be matched
-
-    games_list = []  # list of all games
-    playing_list = [[]]  # list of all players playing in games with ids of games they are in
+    games = []  # list of all games
+    playing_games = [[]]  # list of all players playing in games with ids of games they are in
 
 
 def on_connect():
@@ -21,45 +17,42 @@ def on_connect():
     # what happens when somebody connects
     print(datetime.now().strftime("%H:%M") + " New connection made")
 
-    running.clients_list.append(request.sid)
-    running.connected_players = running.connected_players + 1
-    running.match_making_players = running.match_making_players + 1
+    running.players.append(request.sid)
 
     welcome()
     
-    send_to(running.waiting_list, "New player has connected and wants to play!")
+    send_to(running.waiting_players, "New player has connected and wants to play!")
 
-    running.waiting_list.insert(0, request.sid)
+    running.waiting_players.insert(0, request.sid)
+    
     match_making()
 
 
 def on_disconnect():
 
     # Maintaining numbers and lists of ALL connected players
-    running.connected_players = running.connected_players - 1
-    running.clients_list.remove(request.sid)
+    running.players.remove(request.sid)
 
     # Disconnected player was in a waiting list
-    if request.sid in running.waiting_list:
-        running.waiting_list.remove(request.sid)
-        running.match_making_players = running.match_making_players - 1
+    if request.sid in running.waiting_players:
+        running.waiting_players.remove(request.sid)
 
     # Disconnected player was in a game, checking
-    for player_and_game in running.playing_list:
+    for player_and_game in running.playing_games:
 
         if request.sid in player_and_game:
 
             print("Player in a chess game has disconnected")
 
-            gameid = player_and_game[1]
-            the_game = running.games_list[gameid]
+            game_id = player_and_game[1]
+            the_game = running.games[game_id]
 
             # inform the game
             the_game.player_disconnected(request.sid)
 
             # if player is still on the list
             try:
-                running.playing_list.remove([request.sid, gameid])
+                running.playing_games.remove([request.sid, game_id])
             except ValueError:
                 # player was already removed
                 pass
@@ -73,13 +66,13 @@ def on_message(line):
     print(datetime.now().strftime("%H:%M ") + f"Received a message: {line}")
 
     # is the client playing in a game
-    if (any(request.sid in sublist for sublist in running.playing_list)):
+    if (any(request.sid in sublist for sublist in running.playing_games)):
 
         # find the game's id
-        for player_and_game in running.playing_list:
+        for player_and_game in running.playing_games:
             if (request.sid in player_and_game):
-                gameid = player_and_game[1]
-                the_game = running.games_list[gameid]
+                game_id = player_and_game[1]
+                the_game = running.games[game_id]
 
         # is it the player's turn and the game hasn't ended
         if (request.sid == the_game.players[the_game.player_turn] and (the_game.is_gameover == False)):
@@ -96,9 +89,8 @@ def on_message(line):
                 send_to(list, "TRYAGAIN")
 
     # the client is in the lobby but after having played the game
-    elif (line == "MATCH") and not (request.sid in running.waiting_list):
-        running.waiting_list.append(request.sid)
-        running.match_making_players = running.match_making_players + 1
+    elif (line == "MATCH") and not (request.sid in running.waiting_players):
+        running.waiting_players.append(request.sid)
         match_making()
 
 
@@ -112,23 +104,20 @@ def welcome():
     # a bunch of on-login messages
     send("Welcome to Chessroad.")
     send("Server time: " + datetime.now().strftime("%H:%M"))
-    send("Connected players: " + str(running.connected_players))
-    send("Available players for matchmaking: " + str(running.match_making_players))
+    send("Connected players: " + str(len(running.players)))
+    send("Available players for matchmaking: " + str(len(running.waiting_players) + 1))
 
 
 def match_making():
     # Find two players on a waiting list and make them play
     # Is there enough players in waiting queue
-    if (running.match_making_players >= 2):
+    if (len(running.waiting_players) >= 2):
         print(datetime.now().strftime("%H:%M") + " Matchmaking two players..")
 
         # Creating a shortlist of matched players at the moment
         two_players = []
-        two_players.append(running.waiting_list.pop(0))
-        two_players.append(running.waiting_list.pop(0))
-
-        # Maintaining numbers of players
-        running.match_making_players = running.match_making_players - 2
+        two_players.append(running.waiting_players.pop(0))
+        two_players.append(running.waiting_players.pop(0))
 
         # Messaging players that a game has been found
         send_to(two_players, "Found a pair.. Connecting")
@@ -144,20 +133,17 @@ def make_game(two_players):
     
     # Makes the game given list of any free two players
 
-    # Maintaining numbers
-    running.playing_players = running.playing_players + 2
-
     # Sending over the command codes to initialize game modes on clients
     send_to(two_players, "GAMEMODE")
 
     # Server logs and figuring out game's id
-    idnumber = len(running.games_list)
-    print(datetime.now().strftime("%H:%M") + " Hosted a game. ID = " + str(idnumber))
+    next_game_id = len(running.games)
+    print(datetime.now().strftime("%H:%M") + " Hosted a game. ID = " + str(next_game_id))
 
     # Adding players to playing players list with the game's id
-    running.playing_list.append([two_players[0], idnumber])
-    running.playing_list.append([two_players[1], idnumber])
+    running.playing_games.append([two_players[0], next_game_id])
+    running.playing_games.append([two_players[1], next_game_id])
 
     # running the game
     import src.game as game
-    running.games_list.append(game.Game(request.sid, two_players, idnumber))
+    running.games.append(game.Game(request.sid, two_players, next_game_id))
