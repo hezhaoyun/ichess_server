@@ -8,22 +8,23 @@ from src.server import running
 
 class Game:
 
-    def __init__(self, sid, two_players, id_number):
+    def __init__(self, pair):
+        
+        self.players = pair
+        self.player1 = pair[0]
+        self.player2 = pair[1]
+        
+        self.game_id = hash(self.player1) + hash(self.player2)
+        
         # setting up the game board and Chessgame instance
         self.player_turn = 0
         self.this_turn_move_made = False
-        
-        self.players = two_players
-        self.player1 = two_players[0]
-        self.player2 = two_players[1]
-        self.sid = sid
-        self.id_on_server = id_number
-        
+
         self.board = chess.Board()
         self.is_gameover = False
         
         self.first_turn()
-
+        
     def first_turn(self):
 
         self.player_turn = 0  # index of player that is ought to make a move
@@ -36,12 +37,12 @@ class Game:
 
         server.send_to(receivers, "YOUR MOVE")
 
-        print(time.strftime("%H:%M") + " Waiting for a move from player, game ID = " + str(self.id_on_server))
+        print(time.strftime("%H:%M") + " Waiting for a move from player, game ID = " + str(self.game_id))
 
     def new_board_state(self):
         # This send_to out the board state to both players
         server.send_to(self.players, str("\n" + str(self.board)))
-        print(time.strftime("%H:%M") + " GAME STATUS. ID = " + str(self.id_on_server))
+        print(time.strftime("%H:%M") + " GAME STATUS. ID = " + str(self.game_id))
         print(self.board)
 
     def after_move(self):
@@ -127,22 +128,12 @@ class Game:
             self.declare_winner(list, "Your opponent has disconnected")
 
     def gameover(self):
-        print("The game has ended. ID = " + str(self.id_on_server))
+        print("The game has ended. ID = " + str(self.game_id))
         server.send_to(self.players, "GAMEOVER")
         self.is_gameover = True
 
-        the_game = 0
-        # remove the players from playing list
-        for player in self.players:
-            for player_and_game in running.playing_games:
-                if (player in player_and_game):
-                    game_id = player_and_game[1]
-                    the_game = running.games[game_id]
-                    running.playing_games.remove([player, game_id])
-                    print(time.strftime("%H:%M ") + "Removed an in-game player from the players' list")
-
         # remove the game from games list
-        running.games.remove(the_game)
+        running.games.remove(self)
         print(time.strftime("%H:%M") + " Removed a finished game from gamelist")
 
         self.return_to_lobby_after_game()
