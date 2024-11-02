@@ -1,8 +1,7 @@
-import time
-
 import chess
 
 import src.server as server
+from src.logger import logger
 from src.server import running
 
 
@@ -11,8 +10,8 @@ class Game:
     def __init__(self, pair):
 
         self.players = pair
-        self.player1 = pair[0]
-        self.player2 = pair[1]
+        self.player1 = self.players[0]
+        self.player2 = self.players[1]
 
         self.game_id = hash(self.player1) + hash(self.player2)
 
@@ -31,15 +30,15 @@ class Game:
 
         self.new_board_state()
 
-        server.send_to([self.players[self.player_turn]], 'YOUR_MOVE')
+        server.send_command([self.players[self.player_turn]], 'YOUR_MOVE', {})
 
-        print(f'{time.strftime('%H:%M')} Waiting for a move from player, game ID = {self.game_id}')
+        logger.info(f'Waiting for a move from player, game ID = {self.game_id}')
 
     def new_board_state(self):
         # This send_to out the board state to both players
-        server.send_to(self.players, f'\n{str(self.board)}')
-        print(f'{time.strftime('%H:%M')} GAME STATUS. ID = {self.game_id}')
-        print(self.board)
+        server.send_message(self.players, f'\n{str(self.board)}')
+        logger.info(f'GAME STATUS. ID = {self.game_id}')
+        logger.info(self.board)
 
     def after_move(self):
         # Verify if both players are still connected
@@ -60,7 +59,11 @@ class Game:
                             self.last_player = (self.last_player + 1) % 2
 
                             # message next player of his turn
-                            server.send_to([self.players[self.player_turn]], 'YOUR_MOVE')
+                            server.send_command(
+                                [self.players[self.player_turn]],
+                                'YOUR_MOVE',
+                                {'last_move': self.board.peek().uci()}
+                            )
 
                     else:
                         # player who made the last move won
@@ -90,17 +93,14 @@ class Game:
             return False
 
     def declare_winner(self, players, reason):
-        server.send_to(players, 'YOU WON!')
-        server.send_to(players, reason)
+        server.send_command(players, 'WON', {'reason': reason})
         self.game_over()
 
     def declare_loser(self, players, reason):
-        server.send_to(players, 'YOU LOST!')
-        server.send_to(players, reason)
+        server.send_command(players, 'LOST', {'reason': reason})
 
     def draw(self, reason):
-        server.send_to(self.players, 'The game has ended in a draw.')
-        server.send_to(self.players, reason)
+        server.send_command(self.players, 'DRAW', {'reason': reason})
         self.game_over()
 
     def player_disconnected(self, player):
@@ -110,57 +110,59 @@ class Game:
             self.declare_winner([self.player1], 'Your opponent has disconnected')
 
     def game_over(self):
-        print(f'The game has ended. ID = {self.game_id}')
-        server.send_to(self.players, 'GAME_OVER')
+        logger.info(f'The game has ended. ID = {self.game_id}')
+        server.send_command(self.players, 'GAME_OVER', {})
         self.is_game_over = True
 
         # remove the game from games list
         running.games.remove(self)
-        print(f'{time.strftime('%H:%M')} Removed a finished game from games')
+        logger.info(f'Removed a finished game from games')
 
         self.return_to_lobby_after_game()
 
     def return_to_lobby_after_game(self):
         # add the players to waiting list, maintain numbers and run matchmaking (since we're adding new players)
         for player in self.players:
-            server.send_to(
+            server.send_message(
                 [player],
-                "You have been put in the matchmaking lobby again but won't be able to play the same opponent."
+                "You have been put in the matchmaking lobby again."
             )
 
         # SPECIAL COMMAND CODE to clients
         for player in self.players:
-            server.send_to([player], 'Type in MATCH to be matched again immediately.')
-            server.send_to([player], 'WAITING_MATCH')
+            server.send_message([player], 'Type in MATCH to be matched again immediately.')
+            server.send_command([player], 'WAITING_MATCH', {})
 
-    def get_message(self, message, player):
-        # processes messages and return True/False depending if it was valid
-        if (str(message) == 'FORFEIT'):
-            if (player == self.player1):
-                self.declare_winner([self.players2], 'The opposite player has forfeited the game')
-                return True
-            else:
-                self.declare_winner([self.players1], 'The opposite player has forfeited the game')
-                return True
+    def on_forfeit(self, player):
 
-        elif (self.verify_move(message) == True):
-            self.make_move(message)
-            return True
+        if (player == self.player1):
+            self.declare_winner([self.player2], 'The opposite player has forfeited the game')
+
         else:
-            server.send_to([player], 'Incorrect command, try again')
+            self.declare_winner([self.player1], 'The opposite player has forfeited the game')
+
+    def on_move(self, move, player):
+        # processes messages and return True/False depending if it was valid
+
+        if ('move' in move and self.verify_move(move['move'])):
+            self.make_move(move['move'])
+            return True
+
+        else:
+            server.send_message([player], 'Incorrect command, try again')
             return False
 
-    def verify_move(self, message):
+    def verify_move(self, move):
         # verifies moves
         try:
-            if (chess.Move.from_uci(message) in self.board.legal_moves):
+            if (chess.Move.from_uci(move) in self.board.legal_moves):
                 return True
             else:
                 return False
         except (ValueError, IndexError) as wrong_format_or_illegal_move:
             return False
 
-    def make_move(self, message):
+    def make_move(self, move):
         # Makes the move on the board
-        self.board.push_uci(message)
+        self.board.push_uci(move)
         self.this_turn_move_made = True
