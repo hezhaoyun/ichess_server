@@ -132,8 +132,8 @@ def make_game(pair):
     white, black = pair[0], pair[1]
 
     # Sending over the command codes to initialize game modes on clients
-    send_command([white], 'GAME_MODE', {'side': 'white'})
-    send_command([black], 'GAME_MODE', {'side': 'black'})
+    send_command([white], 'game_mode', {'side': 'white'})
+    send_command([black], 'game_mode', {'side': 'black'})
 
     # running the game
     import src.game as game

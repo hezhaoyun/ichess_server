@@ -30,7 +30,7 @@ class Game:
 
         self.new_board_state()
 
-        server.send_command([self.players[self.player_turn]], 'YOUR_MOVE', {})
+        server.send_command([self.players[self.player_turn]], 'go', {})
 
         logger.info(f'Waiting for a move from player, game ID = {self.game_id}')
 
@@ -61,7 +61,7 @@ class Game:
                             # message next player of his turn
                             server.send_command(
                                 [self.players[self.player_turn]],
-                                'YOUR_MOVE',
+                                'go',
                                 {'last_move': self.board.peek().uci()}
                             )
 
@@ -93,14 +93,14 @@ class Game:
             return False
 
     def declare_winner(self, players, reason):
-        server.send_command(players, 'WON', {'reason': reason})
+        server.send_command(players, 'win', {'reason': reason})
         self.game_over()
 
     def declare_loser(self, players, reason):
-        server.send_command(players, 'LOST', {'reason': reason})
+        server.send_command(players, 'lost', {'reason': reason})
 
     def draw(self, reason):
-        server.send_command(self.players, 'DRAW', {'reason': reason})
+        server.send_command(self.players, 'draw', {'reason': reason})
         self.game_over()
 
     def player_disconnected(self, player):
@@ -111,7 +111,7 @@ class Game:
 
     def game_over(self):
         logger.info(f'The game has ended. ID = {self.game_id}')
-        server.send_command(self.players, 'GAME_OVER', {})
+        server.send_command(self.players, 'game_over', {})
         self.is_game_over = True
 
         # remove the game from games list
@@ -131,7 +131,7 @@ class Game:
         # SPECIAL COMMAND CODE to clients
         for player in self.players:
             server.send_message([player], 'Type in MATCH to be matched again immediately.')
-            server.send_command([player], 'WAITING_MATCH', {})
+            server.send_command([player], 'waiting_match', {})
 
     def on_forfeit(self, player):
 
