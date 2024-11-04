@@ -374,7 +374,7 @@ def make_game(pair):
     send_command([black], 'game_mode', {'side': 'black'})
 
     # running the game
-    the_game = Game(pair, 20, 5)
+    the_game = Game(pair, 180, 5)
     running.games.append(the_game)
 
     logger.info(f'Hosted a game. ID = {the_game.game_id}')
