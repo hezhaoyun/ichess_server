@@ -42,6 +42,10 @@ class Game:
         self.board = chess.Board()
         self.is_game_over = False
 
+        self.previous_move = None  # 记录上一步
+        self.draw_proposer = None  # 记录谁发起求和
+        self.takeback_proposer = None  # 记录谁请求悔棋
+
         self.first_turn()
 
     def opponent_of(self, player):
@@ -132,9 +136,9 @@ class Game:
             # one of the players has disconnected
             # declaring winners
             if not (self.is_player_connected(self.player1)):
-                self.declare_winner([self.player2], 'Your opponent has disconnected')
+                self.declare_winner([self.player2], '对手对出对局了！')
             else:
-                self.declare_winner([self.player1], 'Your opponent has disconnected')
+                self.declare_winner([self.player1], '对手对出对局了！')
 
     def is_player_connected(self, player):
         if (player in running.players):
@@ -156,9 +160,9 @@ class Game:
 
     def player_disconnected(self, player):
         if (self.player1 == player):
-            self.declare_winner([self.player2], 'Your opponent has disconnected')
+            self.declare_winner([self.player2], '对手对出对局了！')
         elif (self.player2 == player):
-            self.declare_winner([self.player1], 'Your opponent has disconnected')
+            self.declare_winner([self.player1], '对手对出对局了！')
 
     def game_over(self):
 
@@ -177,21 +181,21 @@ class Game:
         for player in self.players:
             send_message(
                 [player],
-                "You have been put in the matchmaking lobby again."
+                "你已被放入匹配对局等待列表中。"
             )
 
         # SPECIAL COMMAND CODE to clients
         for player in self.players:
-            send_message([player], 'Type in MATCH to be matched again immediately.')
+            send_message([player], '输入 MATCH 以立即匹配对局。')
             send_command([player], 'waiting_match', {})
 
     def on_forfeit(self, player):
 
         if (player == self.player1):
-            self.declare_winner([self.player2], 'The opposite player has forfeited the game')
+            self.declare_winner([self.player2], '对手认输！')
 
         else:
-            self.declare_winner([self.player1], 'The opposite player has forfeited the game')
+            self.declare_winner([self.player1], '对手认输！')
 
     def on_move(self, move, player):
         # processes messages and return True/False depending if it was valid
@@ -202,7 +206,7 @@ class Game:
             return True
 
         else:
-            send_message([player], 'Incorrect command, try again')
+            send_message([player], f'指令错误：{move}，请重新输入。')
             return False
 
     def verify_move(self, move):
@@ -220,6 +224,93 @@ class Game:
         self.board.push_uci(move)
         self.this_turn_move_made = True
 
+    def on_draw_proposal(self, proposer):
+        
+        if self.draw_proposer is None:
+        
+            self.draw_proposer = proposer
+            opponent = self.opponent_of(proposer)
+        
+            send_command([opponent], 'draw_request', {
+                'message': '对手提议和棋，接受吗？'
+            })
+        
+            return True
+        
+        return False
+
+    def on_draw_response(self, responder, accepted):
+        
+        if self.draw_proposer and responder == self.opponent_of(self.draw_proposer):
+        
+            if accepted:
+                self.draw('和棋达成！')
+        
+            else:
+                send_command([self.draw_proposer], 'draw_declined', {})
+        
+            self.draw_proposer = None
+        
+            return True
+        
+        return False
+
+    def on_takeback_proposal(self, proposer):
+        
+        if self.takeback_proposer is None and len(self.board.move_stack) > 0:
+        
+            self.takeback_proposer = proposer
+            opponent = self.opponent_of(proposer)
+        
+            send_command([opponent], 'takeback_request', {
+                'message': '对手请求悔棋，接受吗？'
+            })
+        
+            return True
+        
+        return False
+
+    def on_takeback_response(self, responder, accepted):
+        
+        if self.takeback_proposer and responder == self.opponent_of(self.takeback_proposer):
+
+            if accepted:
+
+                # 检查是否有至少两步可以撤销
+                if len(self.board.move_stack) >= 2:
+                    # 撤销双方最近的两步棋
+                    _ = self.board.pop()  # 撤销对手的一步
+                    _ = self.board.pop()  # 撤销自己的一步
+                    
+                    # 恢复时间 (为双方都减去增量时间)
+                    self.game_times[0] -= self.step_increment_time
+                    self.game_times[1] -= self.step_increment_time
+                    self.start_time = time.time()
+                    
+                    # 轮到发起悔棋方重新走棋
+                    self.player_turn = self.players.index(self.takeback_proposer)
+                    self.last_player = (self.player_turn + 1) % 2
+
+                    # 通知双方
+                    send_command(self.players, 'takeback_success', {})
+                    
+                    self.new_board_state()
+                    send_command([self.players[self.player_turn]], 'go', {})
+                
+                else:
+                    # 棋步不足,拒绝悔棋
+                    send_command([self.takeback_proposer], 'takeback_declined', 
+                               {'reason': '棋步不足，无法悔棋！'})
+            
+            else:
+                send_command([self.takeback_proposer], 'takeback_declined', {})
+
+            self.takeback_proposer = None
+            
+            return True
+
+        return False
+
 
 @app.route('/')
 def index():
@@ -235,7 +326,7 @@ def on_connect():
 
     welcome()
 
-    send_message(running.waiting_players, 'New player has connected and wants to play!')
+    send_message(running.waiting_players, '新玩家已连接，等待匹配对局！')
 
     running.waiting_players.insert(0, request.sid)
 
@@ -276,18 +367,6 @@ def on_match(_):
         match_making()
 
 
-@socketio.on('forfeit')
-def on_forfeit(_):
-    logger.info(f'{request.sid} wants to forfeit.')
-
-    game = find_game(request.sid)
-    if game:
-        game.on_forfeit(request.sid)
-
-    else:
-        logger.info(f'{request.sid} is not in a game.')
-
-
 @socketio.on('move')
 def on_move(data):
     logger.info(f'{request.sid} wants to move {data}.')
@@ -306,6 +385,64 @@ def on_move(data):
         logger.info(f'{request.sid} is not in a game.')
 
 
+@socketio.on('propose_draw')
+def on_propose_draw(_):
+    logger.info(f'{request.sid} proposed a draw.')
+    
+    game = find_game(request.sid)
+    if game:
+        if game.on_draw_proposal(request.sid):
+            logger.info(f'{request.sid} proposed a draw')
+        else:
+            logger.info(f'{request.sid} draw proposal failed')
+
+
+@socketio.on('draw_response')
+def on_draw_response(data):
+    logger.info(f'{request.sid} responded to draw: {data}')
+    
+    game = find_game(request.sid)
+    if game:
+        accepted = data.get('accepted', False)
+        if game.on_draw_response(request.sid, accepted):
+            logger.info(f'{request.sid} responded to draw: {accepted}')
+        else:
+            logger.info(f'{request.sid} draw response failed')
+
+
+@socketio.on('propose_takeback')
+def on_propose_takeback(_):
+    game = find_game(request.sid)
+    if game:
+        if game.on_takeback_proposal(request.sid):
+            logger.info(f'{request.sid} requested takeback')
+        else:
+            logger.info(f'{request.sid} takeback request failed')
+
+
+@socketio.on('takeback_response')
+def on_takeback_response(data):
+    game = find_game(request.sid)
+    if game:
+        accepted = data.get('accepted', False)
+        if game.on_takeback_response(request.sid, accepted):
+            logger.info(f'{request.sid} responded to takeback: {accepted}')
+        else:
+            logger.info(f'{request.sid} takeback response failed')
+
+
+@socketio.on('forfeit')
+def on_forfeit(_):
+    logger.info(f'{request.sid} wants to forfeit.')
+
+    game = find_game(request.sid)
+    if game:
+        game.on_forfeit(request.sid)
+
+    else:
+        logger.info(f'{request.sid} is not in a game.')
+
+
 @socketio.on('timer_check')
 def on_timer_check(_):
     game = find_game(request.sid)
@@ -314,12 +451,12 @@ def on_timer_check(_):
         timer = game.get_timer(request.sid)
 
         if timer['mine'] <= 0 and game.players[game.player_turn] == request.sid:
-            
+
             loser, winner = request.sid, game.opponent_of(request.sid)
-            
-            game.declare_winner([winner], 'Opponent have timed out')
-            game.declare_loser([loser], 'You have timed out')
-        
+
+            game.declare_winner([winner], '对手超时！')
+            game.declare_loser([loser], '你超时了！')
+
         else:
             send_command([request.sid], 'timer', timer)
 
@@ -335,10 +472,10 @@ def on_message(data):
 
 def welcome():
     # a bunch of on-login messages
-    send('Welcome to Chessroad.')
-    send(f"Server time: {datetime.now().strftime('%H:%M')}")
-    send(f'Connected players: {len(running.players)}')
-    send(f'Available players for matchmaking: {len(running.waiting_players) + 1}')
+    send('欢迎来到Chessroad。')
+    send(f"服务器时间: {datetime.now().strftime('%H:%M')}")
+    send(f'当前在线玩家: {len(running.players)}')
+    send(f'当前匹配对局等待列表: {len(running.waiting_players) + 1}')
 
 
 def match_making():
@@ -354,13 +491,13 @@ def match_making():
         pair.append(running.waiting_players.pop(0))
 
         # Messaging players that a game has been found
-        send_message(pair, 'Found a pair.. Connecting')
+        send_message(pair, '找到匹配对局.. 连接中')
 
         make_game(pair)
 
     else:
-        # Not enough players, you have to wait!
-        send('Please wait to be matched with another player')
+        # 等待人数不足，请耐心等待！
+        send('请耐心等待匹配另一名玩家..')
 
 
 def make_game(pair):
@@ -401,4 +538,5 @@ def send_command(sids: list[str], event: str, message: dict):
 
 
 if __name__ == '__main__':
+    logger.info('Starting server...')
     socketio.run(app)
