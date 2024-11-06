@@ -1,4 +1,3 @@
-import logging
 import time
 from datetime import datetime
 from random import shuffle
@@ -225,53 +224,53 @@ class Game:
         self.this_turn_move_made = True
 
     def on_draw_proposal(self, proposer):
-        
+
         if self.draw_proposer is None:
-        
+
             self.draw_proposer = proposer
             opponent = self.opponent_of(proposer)
-        
+
             send_command([opponent], 'draw_request', {
                 'message': '对手提议和棋，接受吗？'
             })
-        
+
             return True
-        
+
         return False
 
     def on_draw_response(self, responder, accepted):
-        
+
         if self.draw_proposer and responder == self.opponent_of(self.draw_proposer):
-        
+
             if accepted:
                 self.draw('和棋达成！')
-        
+
             else:
                 send_command([self.draw_proposer], 'draw_declined', {})
-        
+
             self.draw_proposer = None
-        
+
             return True
-        
+
         return False
 
     def on_takeback_proposal(self, proposer):
-        
+
         if self.takeback_proposer is None and len(self.board.move_stack) > 0:
-        
+
             self.takeback_proposer = proposer
             opponent = self.opponent_of(proposer)
-        
+
             send_command([opponent], 'takeback_request', {
                 'message': '对手请求悔棋，接受吗？'
             })
-        
+
             return True
-        
+
         return False
 
     def on_takeback_response(self, responder, accepted):
-        
+
         if self.takeback_proposer and responder == self.opponent_of(self.takeback_proposer):
 
             if accepted:
@@ -281,32 +280,32 @@ class Game:
                     # 撤销双方最近的两步棋
                     _ = self.board.pop()  # 撤销对手的一步
                     _ = self.board.pop()  # 撤销自己的一步
-                    
+
                     # 恢复时间 (为双方都减去增量时间)
                     self.game_times[0] -= self.step_increment_time
                     self.game_times[1] -= self.step_increment_time
                     self.start_time = time.time()
-                    
+
                     # 轮到发起悔棋方重新走棋
                     self.player_turn = self.players.index(self.takeback_proposer)
                     self.last_player = (self.player_turn + 1) % 2
 
                     # 通知双方
                     send_command(self.players, 'takeback_success', {})
-                    
+
                     self.new_board_state()
                     send_command([self.players[self.player_turn]], 'go', {})
-                
+
                 else:
                     # 棋步不足,拒绝悔棋
-                    send_command([self.takeback_proposer], 'takeback_declined', 
-                               {'reason': '棋步不足，无法悔棋！'})
-            
+                    send_command([self.takeback_proposer], 'takeback_declined',
+                                 {'reason': '棋步不足，无法悔棋！'})
+
             else:
                 send_command([self.takeback_proposer], 'takeback_declined', {})
 
             self.takeback_proposer = None
-            
+
             return True
 
         return False
@@ -314,7 +313,11 @@ class Game:
 
 @app.route('/')
 def index():
-    return 'Chess Server is running!'
+
+    return '欢迎来到 Chessroad!\n' \
+           + f"服务器时间: {datetime.now().strftime('%H:%M')}\n" \
+           + f'当前在线玩家: {len(running.players)}\n' \
+           + f'当前匹配对局等待列表: {len(running.waiting_players)}\n'
 
 
 @socketio.on('connect')
@@ -388,7 +391,7 @@ def on_move(data):
 @socketio.on('propose_draw')
 def on_propose_draw(_):
     logger.info(f'{request.sid} proposed a draw.')
-    
+
     game = find_game(request.sid)
     if game:
         if game.on_draw_proposal(request.sid):
@@ -400,7 +403,7 @@ def on_propose_draw(_):
 @socketio.on('draw_response')
 def on_draw_response(data):
     logger.info(f'{request.sid} responded to draw: {data}')
-    
+
     game = find_game(request.sid)
     if game:
         accepted = data.get('accepted', False)
@@ -472,7 +475,7 @@ def on_message(data):
 
 def welcome():
     # a bunch of on-login messages
-    send('欢迎来到Chessroad。')
+    send('欢迎来到 Chessroad!')
     send(f"服务器时间: {datetime.now().strftime('%H:%M')}")
     send(f'当前在线玩家: {len(running.players)}')
     send(f'当前匹配对局等待列表: {len(running.waiting_players) + 1}')
