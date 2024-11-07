@@ -48,7 +48,7 @@ def on_disconnect():
 
     # Disconnected player was in a game, checking
     for game in running.games:
-        if request.sid in game.online_players:
+        if request.sid in game.players:
             logger.info('Player in a chess game has disconnected')
             game.player_disconnected(request.sid)
 
@@ -149,7 +149,7 @@ def on_timer_check(_):
     if game:
         timer = game.get_timer(request.sid)
 
-        if timer['mine'] <= 0 and game.online_players[game.player_turn] == request.sid:
+        if timer['mine'] <= 0 and game.players[game.player_turn] == request.sid:
             loser, winner = request.sid, game.opponent_of(request.sid)
             game.declare_winner([winner], '对手超时！')
             game.declare_loser([loser], '你超时了！')
@@ -216,7 +216,7 @@ def make_game(pair: List[str]):
 
 def find_game(sid: str) -> Optional[Game]:
     for game in running.games:
-        if sid in game.online_players:
+        if sid in game.players:
             return game
 
     return None
