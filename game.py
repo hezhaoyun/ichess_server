@@ -3,6 +3,7 @@ from typing import Dict, List
 
 import chess
 
+from elo import update_elo_after_game
 from share import logger, running, send_command, send_message
 
 
@@ -106,23 +107,30 @@ class Game:
 
                     else:
                         # player who made the last move won
-                        self.declare_loser([self.players[self.last_player]], 'Checkmate')
-                        self.declare_winner([self.players[self.player_turn]], 'Checkmate')
+                        self.declare_loser([self.players[self.last_player]], '绝杀！')
+                        self.declare_winner([self.players[self.player_turn]], '绝杀！')
+                        update_elo_after_game(self.players[self.player_turn], self.players[self.last_player], 1)
+
                 else:
                     # is a stalemate due to insufficient material
-                    self.draw('Insufficient material')
+                    self.draw('子力不足！')
+                    update_elo_after_game(self.player1, self.player2, 0.5)
 
             else:
                 # is a stalemate
-                self.draw('Stalemate')
+                self.draw('僵局！')
+                update_elo_after_game(self.player1, self.player2, 0.5)
 
         else:
             # one of the players has disconnected
             # declaring winners
             if not (self.is_player_connected(self.player1)):
-                self.declare_winner([self.player2], '对手对出对局了！')
+                self.declare_winner([self.player2], '对手退出对局了！')
+                update_elo_after_game(self.player2, self.player1, 1)
+
             else:
-                self.declare_winner([self.player1], '对手对出对局了！')
+                self.declare_winner([self.player1], '对手退出对局了！')
+                update_elo_after_game(self.player1, self.player2, 1)
 
     def is_player_connected(self, player: str) -> bool:
         if (player in running.online_players):
@@ -144,9 +152,12 @@ class Game:
 
     def player_disconnected(self, player: str):
         if (self.player1 == player):
-            self.declare_winner([self.player2], '对手对出对局了！')
+            self.declare_winner([self.player2], '对手退出对局了！')
+            update_elo_after_game(self.player2, self.player1, 1)
+
         elif (self.player2 == player):
-            self.declare_winner([self.player1], '对手对出对局了！')
+            self.declare_winner([self.player1], '对手退出对局了！')
+            update_elo_after_game(self.player1, self.player2, 1)
 
     def game_over(self):
 
@@ -177,9 +188,11 @@ class Game:
 
         if (player == self.player1):
             self.declare_winner([self.player2], '对手认输！')
+            update_elo_after_game(self.player2, self.player1, 1)
 
         else:
             self.declare_winner([self.player1], '对手认输！')
+            update_elo_after_game(self.player1, self.player2, 1)
 
     def on_move(self, move: Dict[str, str], player: str) -> bool:
         # processes messages and return True/False depending if it was valid
@@ -229,6 +242,7 @@ class Game:
 
             if accepted:
                 self.draw('和棋达成！')
+                update_elo_after_game(self.player1, self.player2, 0.5)
 
             else:
                 send_command([self.draw_proposer], 'draw_declined', {})

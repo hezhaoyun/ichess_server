@@ -5,6 +5,7 @@ from typing import List, Optional
 from flask import Flask, request
 from flask_socketio import SocketIO, send
 
+from elo import update_elo_after_game
 from game import Game
 from share import logger, running, send_command, send_message
 
@@ -151,8 +152,9 @@ def on_timer_check(_):
 
         if timer['mine'] <= 0 and game.players[game.player_turn] == request.sid:
             loser, winner = request.sid, game.opponent_of(request.sid)
-            game.declare_winner([winner], '对手超时！')
             game.declare_loser([loser], '你超时了！')
+            game.declare_winner([winner], '对手超时！')
+            update_elo_after_game(winner, loser, 1)
 
         else:
             send_command([request.sid], 'timer', timer)
