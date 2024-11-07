@@ -1,7 +1,27 @@
-from typing import Any, Dict
-from dbc import load, upsert
+from typing import Any, Dict, Tuple
 
+from flask_socketio import send
+from dbc import load, upsert
+from share import logger
+
+join_cache: Dict[str, Tuple[str, str]] = {}
 player_cache: Dict[str, Dict[str, Any]] = {}
+
+
+def join(sid: str, pid: str, name: str):
+    join_cache[sid] = (pid, name)
+
+
+def pid_of(sid: str) -> str:
+    if sid not in join_cache:
+        logger.error(f'Player {sid} not logged in')
+        return None
+
+    return join_cache[sid][0]
+
+
+def name_of(sid: str) -> str:
+    return join_cache[sid][1]
 
 
 def player_of(sid: str) -> Dict[str, Any]:
@@ -9,10 +29,15 @@ def player_of(sid: str) -> Dict[str, Any]:
     if sid in player_cache:
         return player_cache[sid]
 
-    player = load(sid)
+    pid = pid_of(sid)
+    if not pid:
+        send('Please login first!')
+        return None
+
+    player = load(pid)
 
     if player is None:
-        player = {'pid': sid, 'name': sid, 'elo': 1500}
+        player = {'pid': pid, 'elo': 1500, 'name': name_of(sid)}
         upsert(player)
 
     player_cache[sid] = player
@@ -31,19 +56,12 @@ def update_elo_after_game(player_sid: str, opponent_sid: str, result: int):
     player['elo'] = calc_elo(player['elo'], opponent['elo'], result)
     opponent['elo'] = calc_elo(opponent['elo'], player['elo'], 1 - result)
 
-    update_elo(player_sid, player['elo'])
-    update_elo(opponent_sid, opponent['elo'])
+    update_elo(player)
+    update_elo(opponent)
 
 
-def update_elo(pid: str, elo: int) -> bool:
-
-    player = player_of(pid)
-
-    # update the player in the cache
-    if player:
-        player['elo'] = elo
-
-    return upsert({'pid': pid, 'elo': elo})
+def update_elo(player: Dict[str, Any]) -> bool:
+    return upsert({'pid': player['pid'], 'elo': player['elo']})
 
 
 def calc_elo(player_elo: int, opponent_elo: int, result: int, K: int = 30) -> int:

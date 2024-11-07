@@ -5,7 +5,7 @@ from typing import List, Optional
 from flask import Flask, request
 from flask_socketio import SocketIO, send
 
-from elo import update_elo_after_game
+from player import join, name_of, update_elo_after_game
 from game import Game
 from share import logger, running, send_command, send_message
 
@@ -33,10 +33,6 @@ def on_connect():
 
     send_message(running.waiting_players, '新玩家已连接，等待匹配对局！')
 
-    running.waiting_players.insert(0, request.sid)
-
-    match_making()
-
 
 @socketio.on('disconnect')
 def on_disconnect():
@@ -54,6 +50,19 @@ def on_disconnect():
             game.player_disconnected(request.sid)
 
     logger.info('Connection Lost and handled by the server')
+
+
+@socketio.on('join')
+def on_join(data):
+    logger.info(f'{request.sid} logged in with {data}.')
+    
+    if 'pid' not in data or 'name' not in data:
+        send_message(request.sid, '登录失败，请检查客户端版本！')
+        return
+
+    join(request.sid, data['pid'], data['name'])
+
+    on_match(data)
 
 
 @socketio.on('match')
@@ -206,8 +215,8 @@ def make_game(pair: List[str]):
     white, black = pair[0], pair[1]
 
     # Sending over the command codes to initialize game modes on clients
-    send_command([white], 'game_mode', {'side': 'white'})
-    send_command([black], 'game_mode', {'side': 'black'})
+    send_command([white], 'game_mode', {'side': 'white', 'opponent': name_of(black)})
+    send_command([black], 'game_mode', {'side': 'black', 'opponent': name_of(white)})
 
     # running the game
     the_game = Game(pair, 180, 5)

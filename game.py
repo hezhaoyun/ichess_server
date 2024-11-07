@@ -3,7 +3,7 @@ from typing import Dict, List
 
 import chess
 
-from elo import update_elo_after_game
+from player import update_elo_after_game
 from share import logger, running, send_command, send_message
 
 
