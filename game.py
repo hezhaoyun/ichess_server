@@ -1,13 +1,14 @@
 import time
+from typing import Dict, List
 
 import chess
 
-from common import logger, running, send_command, send_message
+from share import logger, running, send_command, send_message
 
 
 class Game:
 
-    def __init__(self, pair, total_time, step_increment_time):
+    def __init__(self, pair: List[str], total_time: int, step_increment_time: int):
 
         self.players = pair
         self.player1 = self.players[0]
@@ -31,7 +32,7 @@ class Game:
 
         self.first_turn()
 
-    def opponent_of(self, player):
+    def opponent_of(self, player: str) -> str:
         return self.players[(self.players.index(player) + 1) % 2]
 
     def update_timer(self):
@@ -41,7 +42,7 @@ class Game:
         self.game_times[self.player_turn] -= elapsed
         self.start_time = current_time
 
-    def get_timer(self, request_player):
+    def get_timer(self, request_player: str) -> Dict[str, int]:
 
         self.update_timer()
 
@@ -123,25 +124,25 @@ class Game:
             else:
                 self.declare_winner([self.player1], '对手对出对局了！')
 
-    def is_player_connected(self, player):
-        if (player in running.players):
+    def is_player_connected(self, player: str) -> bool:
+        if (player in running.online_players):
             return True
         else:
             self.players.remove(player)
             return False
 
-    def declare_winner(self, players, reason):
+    def declare_winner(self, players: List[str], reason: str):
         send_command(players, 'win', {'reason': reason})
         self.game_over()
 
-    def declare_loser(self, players, reason):
+    def declare_loser(self, players: List[str], reason: str):
         send_command(players, 'lost', {'reason': reason})
 
-    def draw(self, reason):
+    def draw(self, reason: str):
         send_command(self.players, 'draw', {'reason': reason})
         self.game_over()
 
-    def player_disconnected(self, player):
+    def player_disconnected(self, player: str):
         if (self.player1 == player):
             self.declare_winner([self.player2], '对手对出对局了！')
         elif (self.player2 == player):
@@ -172,7 +173,7 @@ class Game:
             send_message([player], '输入 MATCH 以立即匹配对局。')
             send_command([player], 'waiting_match', {})
 
-    def on_forfeit(self, player):
+    def on_forfeit(self, player: str):
 
         if (player == self.player1):
             self.declare_winner([self.player2], '对手认输！')
@@ -180,7 +181,7 @@ class Game:
         else:
             self.declare_winner([self.player1], '对手认输！')
 
-    def on_move(self, move, player):
+    def on_move(self, move: Dict[str, str], player: str) -> bool:
         # processes messages and return True/False depending if it was valid
 
         if ('move' in move and self.verify_move(move['move'])):
@@ -192,7 +193,7 @@ class Game:
             send_message([player], f'指令错误：{move}，请重新输入。')
             return False
 
-    def verify_move(self, move):
+    def verify_move(self, move: str) -> bool:
         # verifies moves
         try:
             if (chess.Move.from_uci(move) in self.board.legal_moves):
@@ -202,12 +203,12 @@ class Game:
         except (ValueError, IndexError) as wrong_format_or_illegal_move:
             return False
 
-    def make_move(self, move):
+    def make_move(self, move: str):
         # Makes the move on the board
         self.board.push_uci(move)
         self.this_turn_move_made = True
 
-    def on_draw_proposal(self, proposer):
+    def on_draw_proposal(self, proposer: str) -> bool:
 
         if self.draw_proposer is None:
 
@@ -222,7 +223,7 @@ class Game:
 
         return False
 
-    def on_draw_response(self, responder, accepted):
+    def on_draw_response(self, responder: str, accepted: bool) -> bool:
 
         if self.draw_proposer and responder == self.opponent_of(self.draw_proposer):
 
@@ -238,7 +239,7 @@ class Game:
 
         return False
 
-    def on_takeback_proposal(self, proposer):
+    def on_takeback_proposal(self, proposer: str) -> bool:
 
         if self.takeback_proposer is None and len(self.board.move_stack) > 0:
 
@@ -253,7 +254,7 @@ class Game:
 
         return False
 
-    def on_takeback_response(self, responder, accepted):
+    def on_takeback_response(self, responder: str, accepted: bool) -> bool:
 
         if self.takeback_proposer and responder == self.opponent_of(self.takeback_proposer):
 

@@ -1,11 +1,12 @@
 from datetime import datetime
 from random import shuffle
+from typing import List, Optional
 
 from flask import Flask, request
 from flask_socketio import SocketIO, send
 
-from common import logger, running, send_command, send_message
 from game import Game
+from share import logger, running, send_command, send_message
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'chessroad-upup'
@@ -14,10 +15,9 @@ socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
 
 @app.route('/')
 def index():
-
     return '欢迎来到 Chessroad!\n' \
            + f"服务器时间: {datetime.now().strftime('%H:%M')}\n" \
-           + f'当前在线玩家: {len(running.players)}\n' \
+           + f'当前在线玩家: {len(running.online_players)}\n' \
            + f'当前匹配对局等待列表: {len(running.waiting_players)}\n'
 
 
@@ -26,7 +26,7 @@ def on_connect():
     # what happens when somebody connects
     logger.info(f'New connection made: {request.sid}')
 
-    running.players.append(request.sid)
+    running.online_players.append(request.sid)
 
     welcome()
 
@@ -40,7 +40,7 @@ def on_connect():
 @socketio.on('disconnect')
 def on_disconnect():
     # Maintaining numbers and lists of ALL connected players
-    running.players.remove(request.sid)
+    running.online_players.remove(request.sid)
 
     # Disconnected player was in a waiting list
     if request.sid in running.waiting_players:
@@ -48,8 +48,7 @@ def on_disconnect():
 
     # Disconnected player was in a game, checking
     for game in running.games:
-        
-        if request.sid in game.players:
+        if request.sid in game.online_players:
             logger.info('Player in a chess game has disconnected')
             game.player_disconnected(request.sid)
 
@@ -61,7 +60,6 @@ def on_match(_):
     logger.info(f'{request.sid} wants to play.')
 
     game = find_game(request.sid)
-
     if game:
         logger.info(f'{request.sid} is already in a game.')
         return
@@ -77,15 +75,12 @@ def on_move(data):
     logger.info(f'{request.sid} wants to move {data}.')
 
     game = find_game(request.sid)
-
     if game:
         if game.on_move(data, request.sid):
             # Engage the next turn function
             game.after_move()
-
         else:
             logger.info(f'{request.sid} sent an invalid move.')
-
     else:
         logger.info(f'{request.sid} is not in a game.')
 
@@ -154,10 +149,8 @@ def on_timer_check(_):
     if game:
         timer = game.get_timer(request.sid)
 
-        if timer['mine'] <= 0 and game.players[game.player_turn] == request.sid:
-
+        if timer['mine'] <= 0 and game.online_players[game.player_turn] == request.sid:
             loser, winner = request.sid, game.opponent_of(request.sid)
-
             game.declare_winner([winner], '对手超时！')
             game.declare_loser([loser], '你超时了！')
 
@@ -178,7 +171,7 @@ def welcome():
     # a bunch of on-login messages
     send('欢迎来到 Chessroad!')
     send(f"服务器时间: {datetime.now().strftime('%H:%M')}")
-    send(f'当前在线玩家: {len(running.players)}')
+    send(f'当前在线玩家: {len(running.online_players)}')
     send(f'当前匹配对局等待列表: {len(running.waiting_players) + 1}')
 
 
@@ -204,7 +197,7 @@ def match_making():
         send('请耐心等待匹配另一名玩家..')
 
 
-def make_game(pair):
+def make_game(pair: List[str]):
 
     shuffle(pair)
 
@@ -221,9 +214,9 @@ def make_game(pair):
     logger.info(f'Hosted a game. ID = {the_game.game_id}')
 
 
-def find_game(sid):
+def find_game(sid: str) -> Optional[Game]:
     for game in running.games:
-        if sid in game.players:
+        if sid in game.online_players:
             return game
 
     return None
