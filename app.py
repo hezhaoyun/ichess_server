@@ -7,7 +7,7 @@ from typing import List, Optional
 from flask import Flask, request
 
 from game import Game
-from player import join, level_of, name_of
+from player import join, level_of, name_of, player_of
 from share import create_socketio, logger, running, send_command, send_message
 
 app = Flask(__name__)
@@ -32,7 +32,7 @@ def on_connect():
 
     welcome()
 
-    send_message(list(running.waiting_players.keys()), '新玩家已连接，等待匹配对局！')
+    send_message(running.waiting_players.keys(), '新玩家已连接，等待匹配对局！')
 
 
 @socketio.on('disconnect')
@@ -40,9 +40,8 @@ def on_disconnect():
     # Maintaining numbers and lists of ALL connected players
     running.online_players.remove(request.sid)
 
-    # Disconnected player was in a waiting list
-    if request.sid in running.waiting_players:
-        del running.waiting_players[request.sid]
+    # Disconnected player was in a waiting list - 使用 pop() 带默认值
+    running.waiting_players.pop(request.sid, None)
 
     # Disconnected player was in a game, checking
     for game in running.games:
@@ -78,7 +77,6 @@ def on_match(_):
     # the client is not playing in a game
     if request.sid not in running.waiting_players:
         running.waiting_players[request.sid] = time.time()
-        match_making()
 
 
 @socketio.on('move')
@@ -171,13 +169,6 @@ def welcome():
 match_thread_started = False
 
 
-def match_making():
-    global match_thread_started
-    if not match_thread_started:
-        socketio.start_background_task(target=match_players)
-        match_thread_started = True  # 标记线程已启动
-
-
 # 后台配对任务
 def match_players():
 
@@ -191,12 +182,15 @@ def match_players():
         socketio.sleep(5)  # 每5秒检查一次匹配情况
 
         current_time = time.time()
-        pair = []  # 将要从等待队列中移除的配对玩家
+        to_remove = []  # 将要从等待队列中移除的配对玩家
 
         for sid, join_time in running.waiting_players.items():
+            
+            if sid in to_remove:
+                continue
 
             time_waited = current_time - join_time
-            level = level_of(sid)
+            level = level_of(player_of(sid)['elo'])
 
             allowed_difference = min(
                 MATCH_DIFF_INIT + (MATCH_DIFF_INC * int(time_waited / 5)),
@@ -204,29 +198,26 @@ def match_players():
             )
 
             for other_sid, _ in running.waiting_players.items():
-                if other_sid == sid:
+                
+                # 跳过自己或已配对的玩家
+                if other_sid == sid or other_sid in to_remove:
                     continue
 
-                other_level = level_of(other_sid)
+                other_level = level_of(player_of(other_sid)['elo'])
 
                 # 寻找合适对手
                 if abs(level - other_level) <= allowed_difference:
                     # 找到合适对手，进行配对
-                    pair.extend([sid, other_sid])
-                    send_message([sid], '找到匹配对局.. 连接中')
-                    send_message([other_sid], '找到匹配对局.. 连接中')
+                    pair = [sid, other_sid]
+                    to_remove.extend(pair)
+
+                    send_message(pair, '找到匹配对局.. 连接中')
+                    make_game(pair)
                     break
 
         # 从等待队列中移除已配对的玩家
-        for sid in pair:
-            del running.waiting_players[sid]
-
-        # 如果配对成功，则创建游戏
-        if len(pair) == 2:
-            make_game(pair)
-        else:
-            # 配对失败，请耐心等待！
-            send_message([request.sid], '配对失败，请耐心等待！')
+        for sid in to_remove:
+            running.waiting_players.pop(sid, None)
 
 
 def make_game(pair: List[str]):
@@ -256,4 +247,5 @@ def find_game(sid: str) -> Optional[Game]:
 
 if __name__ == '__main__':
     logger.info('Starting server...')
+    socketio.start_background_task(target=match_players)
     socketio.run(app)

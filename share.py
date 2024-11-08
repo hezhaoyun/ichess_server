@@ -1,15 +1,15 @@
 import logging
 import threading
-from typing import List
+from typing import Dict, List
 
 from flask import Flask
 from flask_socketio import SocketIO, emit, send
 
 
 class running:
-    online_players: List[str] = []  # list of all players connected
-    waiting_players: List[str] = []  # list of players waiting to be matched
-    games = []  # list of all games
+    online_players: List[str] = []
+    waiting_players: Dict[str, str] = {}
+    games = []
     socketio: SocketIO = None
 
 
