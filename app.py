@@ -3,7 +3,6 @@ from random import shuffle
 from typing import List, Optional
 
 from flask import Flask, request
-from flask_socketio import SocketIO
 
 from game import Game
 from player import join, name_of
