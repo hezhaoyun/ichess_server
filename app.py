@@ -165,10 +165,6 @@ def welcome():
     send_message([request.sid], f'当前匹配对局等待列表: {len(running.waiting_players) + 1}')
 
 
-# 用于记录配对线程是否已启动
-match_thread_started = False
-
-
 # 后台配对任务
 def match_players():
 
@@ -185,7 +181,7 @@ def match_players():
         to_remove = []  # 将要从等待队列中移除的配对玩家
 
         for sid, join_time in running.waiting_players.items():
-            
+
             if sid in to_remove:
                 continue
 
@@ -198,7 +194,7 @@ def match_players():
             )
 
             for other_sid, _ in running.waiting_players.items():
-                
+
                 # 跳过自己或已配对的玩家
                 if other_sid == sid or other_sid in to_remove:
                     continue
@@ -231,10 +227,10 @@ def make_game(pair: List[str]):
     send_command([black], 'game_mode', {'side': 'black', 'opponent': name_of(white)})
 
     # running the game
-    the_game = Game(pair, 20, 5)
-    running.games.append(the_game)
+    game = Game(pair, 180, 5)
+    running.games.append(game)
 
-    logger.info(f'Hosted a game. ID = {the_game.game_id}')
+    logger.info(f'Hosted a game. ID = {game.game_id}')
 
 
 def find_game(sid: str) -> Optional[Game]:
