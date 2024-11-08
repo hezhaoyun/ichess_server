@@ -1,25 +1,49 @@
 import logging
+import threading
 from typing import List
 
-from flask_socketio import emit, send
+from flask import Flask
+from flask_socketio import SocketIO, emit, send
 
 
 class running:
     online_players: List[str] = []  # list of all players connected
     waiting_players: List[str] = []  # list of players waiting to be matched
     games = []  # list of all games
+    socketio: SocketIO = None
+
+
+def create_socketio(app: Flask):
+
+    if running.socketio is None:
+        running.socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
+
+    return running.socketio
 
 
 def send_message(sids: List[str], message: str):
+
+    thread_name = threading.current_thread().name
+
     # message privately everyone on the list
-    for sid in sids:
-        send(message, to=sid)
+    if thread_name.startswith('timer_task'):
+        for sid in sids:
+            running.socketio.send(message, to=sid)
+    else:
+        for sid in sids:
+            send(message, to=sid)
 
 
 def send_command(sids: List[str], event: str, message: dict):
-    # 使用 socketio.emit() 替代 emit()
-    for sid in sids:
-        emit(event, message, room=sid)
+
+    thread_name = threading.current_thread().name
+
+    if thread_name.startswith('timer_task'):
+        for sid in sids:
+            running.socketio.emit(event, message, to=sid)
+    else:
+        for sid in sids:
+            emit(event, message, to=sid)
 
 
 def get_logger() -> logging.Logger:

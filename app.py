@@ -3,15 +3,15 @@ from random import shuffle
 from typing import List, Optional
 
 from flask import Flask, request
-from flask_socketio import SocketIO, send
+from flask_socketio import SocketIO
 
-from player import join, name_of, update_elo_after_game
 from game import Game
-from share import logger, running, send_command, send_message
+from player import join, name_of
+from share import create_socketio, logger, running, send_command, send_message
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'chessroad-upup'
-socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
+socketio = create_socketio(app)
 
 
 @app.route('/')
@@ -55,7 +55,7 @@ def on_disconnect():
 @socketio.on('join')
 def on_join(data):
     logger.info(f'{request.sid} logged in with {data}.')
-    
+
     if 'pid' not in data or 'name' not in data:
         send_message(request.sid, '登录失败，请检查客户端版本！')
         return
@@ -152,26 +152,6 @@ def on_forfeit(_):
         logger.info(f'{request.sid} is not in a game.')
 
 
-@socketio.on('timer_check')
-def on_timer_check(_):
-    game = find_game(request.sid)
-
-    if game:
-        timer = game.get_timer(request.sid)
-
-        if timer['mine'] <= 0 and game.players[game.player_turn] == request.sid:
-            loser, winner = request.sid, game.opponent_of(request.sid)
-            game.declare_loser([loser], '你超时了！')
-            game.declare_winner([winner], '对手超时！')
-            update_elo_after_game(winner, loser, 1)
-
-        else:
-            send_command([request.sid], 'timer', timer)
-
-    else:
-        logger.info(f'{request.sid} is not in a game.')
-
-
 @socketio.on('message')
 def on_message(data):
     # we got something from a client
@@ -180,10 +160,10 @@ def on_message(data):
 
 def welcome():
     # a bunch of on-login messages
-    send('欢迎来到 Chessroad!')
-    send(f"服务器时间: {datetime.now().strftime('%H:%M')}")
-    send(f'当前在线玩家: {len(running.online_players)}')
-    send(f'当前匹配对局等待列表: {len(running.waiting_players) + 1}')
+    send_message([request.sid], '欢迎来到 Chessroad!')
+    send_message([request.sid], f"服务器时间: {datetime.now().strftime('%H:%M')}")
+    send_message([request.sid], f'当前在线玩家: {len(running.online_players)}')
+    send_message([request.sid], f'当前匹配对局等待列表: {len(running.waiting_players) + 1}')
 
 
 def match_making():
@@ -205,7 +185,7 @@ def match_making():
 
     else:
         # 等待人数不足，请耐心等待！
-        send('请耐心等待匹配另一名玩家..')
+        send_message([request.sid], '请耐心等待匹配另一名玩家..')
 
 
 def make_game(pair: List[str]):
@@ -219,7 +199,7 @@ def make_game(pair: List[str]):
     send_command([black], 'game_mode', {'side': 'black', 'opponent': name_of(white)})
 
     # running the game
-    the_game = Game(pair, 180, 5)
+    the_game = Game(pair, 20, 5)
     running.games.append(the_game)
 
     logger.info(f'Hosted a game. ID = {the_game.game_id}')

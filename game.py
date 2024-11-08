@@ -1,3 +1,4 @@
+import threading
 import time
 from typing import Dict, List
 
@@ -36,6 +37,34 @@ class Game:
     def opponent_of(self, player: str) -> str:
         return self.players[(self.players.index(player) + 1) % 2]
 
+    def timer_task(self):
+        
+        threading.current_thread().name = f'timer_task_{self.game_id}'
+
+        while not self.is_game_over:
+
+            running.socketio.sleep(1)
+            self.update_timer()
+
+            current = self.players[self.player_turn]
+            opponent = self.opponent_of(current)
+
+            current_time = int(self.game_times[self.player_turn])
+            opponent_time = int(self.game_times[(self.player_turn + 1) % 2])
+
+            if current_time < 0 or opponent_time < 0:
+                loser = current if current_time < 0 else opponent
+                winner = self.opponent_of(loser)
+
+                self.declare_loser([loser], '你超时了！')
+                self.declare_winner([winner], '对手超时！')
+
+                update_elo_after_game(winner, loser, 1)
+
+            else:
+                send_command([current], 'timer', {'mine': current_time, 'opponent': opponent_time})
+                send_command([opponent], 'timer', {'mine': opponent_time, 'opponent': current_time})
+
     def update_timer(self):
         # Calculate elapsed time based on current time and subtract it from current player's remaining time
         current_time = time.time()
@@ -43,23 +72,7 @@ class Game:
         self.game_times[self.player_turn] -= elapsed
         self.start_time = current_time
 
-    def get_timer(self, request_player: str) -> Dict[str, int]:
-
-        self.update_timer()
-
-        # if the request player is the one that should make a move, return the current player's timer
-
-        request_user_is_current = (request_player == self.players[self.player_turn])
-        current = 'mine' if request_user_is_current else 'opponent'
-        opponent = 'opponent' if request_user_is_current else 'mine'
-
-        return {
-            current: int(self.game_times[self.player_turn]),
-            opponent: int(self.game_times[(self.player_turn + 1) % 2]),
-        }
-
     def first_turn(self):
-
         self.player_turn = 0  # index of player that is ought to make a move
         self.last_player = 1  # index of a player that made move last time
 
@@ -68,6 +81,8 @@ class Game:
         send_command([self.players[self.player_turn]], 'go', {})
 
         self.start_time = time.time()
+
+        running.socketio.start_background_task(target=self.timer_task)
 
         logger.info(f'Waiting for a move from player, game ID = {self.game_id}')
 
