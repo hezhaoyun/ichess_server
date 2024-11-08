@@ -11,7 +11,7 @@ from player import join, level_of, name_of, player_of
 from share import create_socketio, logger, running, send_command, send_message
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'chessroad-upup'
+app.config['SECRET_KEY'] = 'chessroad-up-up-day-day'
 socketio = create_socketio(app)
 
 
@@ -182,6 +182,7 @@ def match_players():
 
         for sid, join_time in running.waiting_players.items():
 
+            # 跳过已配对的玩家
             if sid in to_remove:
                 continue
 
