@@ -26,7 +26,7 @@ def send_message(sids: List[str], message: str):
     thread_name = threading.current_thread().name
 
     # message privately everyone on the list
-    if thread_name.startswith('timer_task'):
+    if thread_name.startswith('timer_task') or thread_name == 'match_players':
         for sid in sids:
             running.socketio.send(message, to=sid)
     else:
@@ -38,7 +38,7 @@ def send_command(sids: List[str], event: str, message: dict):
 
     thread_name = threading.current_thread().name
 
-    if thread_name.startswith('timer_task'):
+    if thread_name.startswith('timer_task') or thread_name == 'match_players':
         for sid in sids:
             running.socketio.emit(event, message, to=sid)
     else:

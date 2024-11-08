@@ -1,3 +1,5 @@
+import threading
+import time
 from datetime import datetime
 from random import shuffle
 from typing import List, Optional
@@ -5,7 +7,7 @@ from typing import List, Optional
 from flask import Flask, request
 
 from game import Game
-from player import join, name_of
+from player import join, level_of, name_of
 from share import create_socketio, logger, running, send_command, send_message
 
 app = Flask(__name__)
@@ -30,7 +32,7 @@ def on_connect():
 
     welcome()
 
-    send_message(running.waiting_players, '新玩家已连接，等待匹配对局！')
+    send_message(list(running.waiting_players.keys()), '新玩家已连接，等待匹配对局！')
 
 
 @socketio.on('disconnect')
@@ -40,7 +42,7 @@ def on_disconnect():
 
     # Disconnected player was in a waiting list
     if request.sid in running.waiting_players:
-        running.waiting_players.remove(request.sid)
+        del running.waiting_players[request.sid]
 
     # Disconnected player was in a game, checking
     for game in running.games:
@@ -75,7 +77,7 @@ def on_match(_):
 
     # the client is not playing in a game
     if request.sid not in running.waiting_players:
-        running.waiting_players.append(request.sid)
+        running.waiting_players[request.sid] = time.time()
         match_making()
 
 
@@ -165,26 +167,66 @@ def welcome():
     send_message([request.sid], f'当前匹配对局等待列表: {len(running.waiting_players) + 1}')
 
 
+# 用于记录配对线程是否已启动
+match_thread_started = False
+
+
 def match_making():
-    # Find two players on a waiting list and make them play
-    # Is there enough players in waiting queue
-    if (len(running.waiting_players) >= 2):
+    global match_thread_started
+    if not match_thread_started:
+        socketio.start_background_task(target=match_players)
+        match_thread_started = True  # 标记线程已启动
 
-        logger.info('Matchmaking two players..')
 
-        # Creating a shortlist of matched players at the moment
-        pair = []
-        pair.append(running.waiting_players.pop(0))
-        pair.append(running.waiting_players.pop(0))
+# 后台配对任务
+def match_players():
 
-        # Messaging players that a game has been found
-        send_message(pair, '找到匹配对局.. 连接中')
+    MATCH_DIFF_INIT = 1     # 初始等级差距
+    MATCH_DIFF_INC = 1      # 每次递增的等级差距
+    MATCH_DIFF_MAX = 4      # 最大等级差距
 
-        make_game(pair)
+    threading.current_thread().name = 'match_players'
 
-    else:
-        # 等待人数不足，请耐心等待！
-        send_message([request.sid], '请耐心等待匹配另一名玩家..')
+    while True:
+        socketio.sleep(5)  # 每5秒检查一次匹配情况
+
+        current_time = time.time()
+        pair = []  # 将要从等待队列中移除的配对玩家
+
+        for sid, join_time in running.waiting_players.items():
+
+            time_waited = current_time - join_time
+            level = level_of(sid)
+
+            allowed_difference = min(
+                MATCH_DIFF_INIT + (MATCH_DIFF_INC * int(time_waited / 5)),
+                MATCH_DIFF_MAX
+            )
+
+            for other_sid, _ in running.waiting_players.items():
+                if other_sid == sid:
+                    continue
+
+                other_level = level_of(other_sid)
+
+                # 寻找合适对手
+                if abs(level - other_level) <= allowed_difference:
+                    # 找到合适对手，进行配对
+                    pair.extend([sid, other_sid])
+                    send_message([sid], '找到匹配对局.. 连接中')
+                    send_message([other_sid], '找到匹配对局.. 连接中')
+                    break
+
+        # 从等待队列中移除已配对的玩家
+        for sid in pair:
+            del running.waiting_players[sid]
+
+        # 如果配对成功，则创建游戏
+        if len(pair) == 2:
+            make_game(pair)
+        else:
+            # 配对失败，请耐心等待！
+            send_message([request.sid], '配对失败，请耐心等待！')
 
 
 def make_game(pair: List[str]):
