@@ -10,11 +10,6 @@ from game import Game
 from player import join, level_of, name_of, player_of, update_elo
 from share import create_socketio, logger, running, send_command, send_message
 
-# 机器人名字池
-BOT_NAMES = ["棋艺高手", "棋道大师", "棋林高手", "棋坛新秀", "棋艺精湛", "棋道高人", "棋坛高手", "棋艺超群"]
-
-# 等待多久后使用机器人（秒）
-BOT_WAIT_TIME = 5
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'chessroad-up-up-day-day'
@@ -177,6 +172,11 @@ def match_players():
     MATCH_DIFF_INIT = 1     # 初始等级差距
     MATCH_DIFF_INC = 1      # 每次递增的等级差距
     MATCH_DIFF_MAX = 4      # 最大等级差距
+
+    # 等待多久后使用机器人（秒）
+    BOT_WAIT_TIME = 15
+    # 机器人名字池
+    BOT_NAMES = ["棋艺高手", "棋道大师", "棋林高手", "棋坛新秀", "棋艺精湛", "棋道高人", "棋坛高手", "棋艺超群"]
 
     threading.current_thread().name = 'match_players'
 
