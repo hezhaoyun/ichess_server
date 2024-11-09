@@ -86,10 +86,7 @@ def on_move(data):
 
     game = find_game(request.sid)
     if game:
-        if game.on_move(data, request.sid):
-            # Engage the next turn function
-            game.after_move()
-        else:
+        if not game.on_move(data, request.sid):
             logger.info(f'{request.sid} sent an invalid move.')
     else:
         logger.info(f'{request.sid} is not in a game.')
