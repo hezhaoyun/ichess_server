@@ -46,7 +46,7 @@ def player_of(sid: str) -> Dict[str, Any]:
 
 
 def level_of(elo: int) -> int:
-    return (elo - 1000) // 100
+    return max(min((elo - 1000) // 100, 1), 20)
 
 
 def update_elo_after_game(player_sid: str, opponent_sid: str, result: int):
