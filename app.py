@@ -164,7 +164,7 @@ class MatchConfig:
     DIFF_INIT = 1          # 初始等级差距
     DIFF_INCREMENT = 1     # 每次递增的等级差距
     DIFF_MAX = 4           # 最大等级差距
-    BOT_WAIT_TIME = 5      # 等待机器人匹配时间（秒）
+    BOT_WAIT_TIME = 15     # 等待机器人匹配时间（秒）
     CHECK_INTERVAL = 5     # 匹配检查间隔（秒）
     
     BOT_NAMES = [
