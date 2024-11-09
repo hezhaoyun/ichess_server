@@ -252,8 +252,12 @@ def make_game(pair: List[str], is_bot: str = None):
     white, black = pair[0], pair[1]
 
     # Sending over the command codes to initialize game modes on clients
-    send_command([white], 'game_mode', {'side': 'white', 'opponent': name_of(black)})
-    send_command([black], 'game_mode', {'side': 'black', 'opponent': name_of(white)})
+    send_command([white], 'game_mode', {
+        'side': 'white', 'opponent': name_of(black), 'opponent_elo': player_of(black)['elo']
+    })
+    send_command([black], 'game_mode', {
+        'side': 'black', 'opponent': name_of(white), 'opponent_elo': player_of(white)['elo']
+    })
 
     # running the game
     game = Game(pair, 180, 5, bot_sid=is_bot)
