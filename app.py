@@ -138,13 +138,13 @@ def on_takeback_response(data):
             logger.info(f'{request.sid} takeback response failed')
 
 
-@socketio.on('forfeit')
-def on_forfeit(_):
-    logger.info(f'{request.sid} wants to forfeit.')
+@socketio.on('resign')
+def on_resign(_):
+    logger.info(f'{request.sid} wants to resign.')
 
     game = find_game(request.sid)
     if game:
-        game.on_forfeit(request.sid)
+        game.on_resign(request.sid)
     else:
         logger.info(f'{request.sid} is not in a game.')
 
@@ -275,7 +275,7 @@ def create_match(pair: List[str], to_remove: List[str], is_bot: str = None):
     make_game(pair, is_bot=is_bot)
 
 def make_game(pair: List[str], is_bot: str = None):
-
+    """创建对局并通知玩家"""
     shuffle(pair)
 
     white, black = pair[0], pair[1]

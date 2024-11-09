@@ -241,7 +241,7 @@ class Game:
 
         update_elo_after_game(winner, loser, 1)
 
-    def on_forfeit(self, player: str):
+    def on_resign(self, player: str):
         if player == self.player1:
             self.declare_winner([self.player2], '对手认输！')
             update_elo_after_game(self.player2, self.player1, 1)
