@@ -1,14 +1,20 @@
 import threading
 import time
 from datetime import datetime
-from random import shuffle
+from random import choice, randint, shuffle
 from typing import List, Optional
 
 from flask import Flask, request
 
 from game import Game
-from player import join, level_of, name_of, player_of
+from player import join, level_of, name_of, player_of, update_elo
 from share import create_socketio, logger, running, send_command, send_message
+
+# 机器人名字池
+BOT_NAMES = ["棋艺高手", "棋道大师", "棋林高手", "棋坛新秀", "棋艺精湛", "棋道高人", "棋坛高手", "棋艺超群"]
+
+# 等待多久后使用机器人（秒）
+BOT_WAIT_TIME = 5
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'chessroad-up-up-day-day'
@@ -212,12 +218,34 @@ def match_players():
                     make_game(pair)
                     break
 
+            # 如果等待时间超过阈值，创建机器人对手
+            if time_waited > BOT_WAIT_TIME and sid not in to_remove:
+                # 创建机器人玩家
+                bot_sid = f"bot_{time.time()}"
+                bot_name = choice(BOT_NAMES)
+
+                # 注册机器人
+                join(bot_sid, bot_sid, bot_name)
+
+                # 根据玩家等级设置机器人等级
+                bot_player = player_of(bot_sid)
+                bot_player['elo'] = player_of(sid)['elo'] + randint(-100, 100)
+                update_elo(bot_player)
+
+                # 创建游戏
+                pair = [sid, bot_sid]
+                to_remove.append(sid)
+
+                send_message([sid], '找到匹配对局.. 连接中')
+                make_game(pair, is_bot=bot_sid)
+                break
+
         # 从等待队列中移除已配对的玩家
         for sid in to_remove:
             running.waiting_players.pop(sid, None)
 
 
-def make_game(pair: List[str]):
+def make_game(pair: List[str], is_bot: str = None):
 
     shuffle(pair)
 
@@ -228,10 +256,10 @@ def make_game(pair: List[str]):
     send_command([black], 'game_mode', {'side': 'black', 'opponent': name_of(white)})
 
     # running the game
-    game = Game(pair, 180, 5)
+    game = Game(pair, 180, 5, bot_sid=is_bot)
     running.games.append(game)
 
-    logger.info(f'Hosted a game. ID = {game.game_id}')
+    logger.info(f'Hosted a game. ID = {game.game_id}' + (' (with bot)' if is_bot else ''))
 
 
 def find_game(sid: str) -> Optional[Game]:

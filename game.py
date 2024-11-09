@@ -3,14 +3,17 @@ import time
 from typing import Dict, List
 
 import chess
+import chess.engine
 
-from player import update_elo_after_game
+from player import level_of, player_of, update_elo_after_game
 from share import logger, running, send_command, send_message
+
+STOCKFISH_PATH = "./stockfish-17-m1"
 
 
 class Game:
 
-    def __init__(self, pair: List[str], total_time: int, step_increment_time: int):
+    def __init__(self, pair: List[str], total_time: int, step_increment_time: int, bot_sid=None):
 
         self.players = pair
         self.player1 = self.players[0]
@@ -32,13 +35,23 @@ class Game:
         self.draw_proposer = None  # 记录谁发起求和
         self.takeback_proposer = None  # 记录谁请求悔棋
 
+        self.bot_sid = bot_sid
+        self.engine = None
+
+        if bot_sid:
+            self.engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+            # 设置合适的引擎强度
+            bot_player = player_of(self.bot_sid)
+            bot_level = level_of(bot_player['elo'])
+            self.engine.configure({"Skill Level": bot_level})  # 1-20之间调整
+
         self.first_turn()
 
     def opponent_of(self, player: str) -> str:
         return self.players[(self.players.index(player) + 1) % 2]
 
     def timer_task(self):
-        
+
         threading.current_thread().name = f'timer_task_{self.game_id}'
 
         while not self.is_game_over:
@@ -76,13 +89,20 @@ class Game:
         self.player_turn = 0  # index of player that is ought to make a move
         self.last_player = 1  # index of a player that made move last time
 
+        self.start_time = time.time()
+        running.socketio.start_background_task(target=self.timer_task)
+
         self.new_board_state()
 
-        send_command([self.players[self.player_turn]], 'go', {})
+        if self.bot_sid and self.players[self.player_turn] == self.bot_sid:
+            # 机器人思考并走子
+            result = self.engine.play(self.board, chess.engine.Limit(time=1.0))
+            if self.on_move({'move': str(result.move)}, self.bot_sid):
+                self.after_move()
+        
+        else:
+            send_command([self.players[self.player_turn]], 'go', {})
 
-        self.start_time = time.time()
-
-        running.socketio.start_background_task(target=self.timer_task)
 
         logger.info(f'Waiting for a move from player, game ID = {self.game_id}')
 
@@ -93,8 +113,9 @@ class Game:
         logger.info(self.board)
 
     def after_move(self):
+
         # Verify if both players are still connected
-        if (self.is_player_connected(self.player1) and self.is_player_connected(self.player2)):
+        if self.is_player_connected(self.player1) and self.is_player_connected(self.player2):
             # draw conditions
             if not (self.board.is_stalemate()):
                 if not (self.board.is_insufficient_material()):
@@ -110,12 +131,19 @@ class Game:
                             self.player_turn = (self.player_turn + 1) % 2
                             self.last_player = (self.last_player + 1) % 2
 
-                            # message next player of his turn
-                            send_command(
-                                [self.players[self.player_turn]],
-                                'go',
-                                {'last_move': self.board.peek().uci()}
-                            )
+                            if self.bot_sid and self.players[self.player_turn] == self.bot_sid:
+                                # 机器人思考并走子
+                                result = self.engine.play(self.board, chess.engine.Limit(time=1.0))
+                                if self.on_move({'move': str(result.move)}, self.bot_sid):
+                                    self.after_move()
+                            
+                            else:
+                                # message next player of his turn
+                                send_command(
+                                    [self.players[self.player_turn]],
+                                    'go',
+                                    {'last_move': self.board.peek().uci()}
+                                )
 
                             # update timer, and reset the start time for next turn
                             self.update_timer()
@@ -148,7 +176,7 @@ class Game:
                 update_elo_after_game(self.player1, self.player2, 1)
 
     def is_player_connected(self, player: str) -> bool:
-        if (player in running.online_players):
+        if player in running.online_players or player.startswith('bot_'):
             return True
         else:
             self.players.remove(player)
@@ -166,7 +194,7 @@ class Game:
         self.game_over()
 
     def player_disconnected(self, player: str):
-        if (self.player1 == player):
+        if self.player1 == player:
             self.declare_winner([self.player2], '对手退出对局了！')
             update_elo_after_game(self.player2, self.player1, 1)
 
@@ -189,10 +217,7 @@ class Game:
     def return_to_lobby_after_game(self):
         # add the players to waiting list, maintain numbers and run matchmaking (since we're adding new players)
         for player in self.players:
-            send_message(
-                [player],
-                "你已被放入匹配对局等待列表中。"
-            )
+            send_message([player], "你已被放入匹配对局等待列表中。")
 
         # SPECIAL COMMAND CODE to clients
         for player in self.players:
@@ -201,7 +226,7 @@ class Game:
 
     def on_forfeit(self, player: str):
 
-        if (player == self.player1):
+        if player == self.player1:
             self.declare_winner([self.player2], '对手认输！')
             update_elo_after_game(self.player2, self.player1, 1)
 
@@ -212,7 +237,7 @@ class Game:
     def on_move(self, move: Dict[str, str], player: str) -> bool:
         # processes messages and return True/False depending if it was valid
 
-        if ('move' in move and self.verify_move(move['move'])):
+        if 'move' in move and self.verify_move(move['move']):
             self.make_move(move['move'])
             self.game_times[self.player_turn] += self.step_increment_time
             return True
@@ -224,7 +249,7 @@ class Game:
     def verify_move(self, move: str) -> bool:
         # verifies moves
         try:
-            if (chess.Move.from_uci(move) in self.board.legal_moves):
+            if chess.Move.from_uci(move) in self.board.legal_moves:
                 return True
             else:
                 return False
@@ -242,6 +267,11 @@ class Game:
 
             self.draw_proposer = proposer
             opponent = self.opponent_of(proposer)
+
+            if self.bot_sid and opponent == self.bot_sid:
+                running.socketio.sleep(1)
+                self.on_draw_response(self.bot_sid, True)
+                return True
 
             send_command([opponent], 'draw_request', {
                 'message': '对手提议和棋，接受吗？'
@@ -274,6 +304,11 @@ class Game:
 
             self.takeback_proposer = proposer
             opponent = self.opponent_of(proposer)
+
+            if self.bot_sid and opponent == self.bot_sid:
+                running.socketio.sleep(1)
+                self.on_takeback_response(self.bot_sid, True)
+                return True
 
             send_command([opponent], 'takeback_request', {
                 'message': '对手请求悔棋，接受吗？'
@@ -312,8 +347,9 @@ class Game:
 
                 else:
                     # 棋步不足,拒绝悔棋
-                    send_command([self.takeback_proposer], 'takeback_declined',
-                                 {'reason': '棋步不足，无法悔棋！'})
+                    send_command([self.takeback_proposer], 'takeback_declined', {
+                        'reason': '棋步不足，无法悔棋！'
+                    })
 
             else:
                 send_command([self.takeback_proposer], 'takeback_declined', {})
@@ -323,3 +359,7 @@ class Game:
             return True
 
         return False
+
+    def __del__(self):
+        if self.engine:
+            self.engine.quit()

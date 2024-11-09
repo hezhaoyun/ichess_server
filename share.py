@@ -27,10 +27,17 @@ def send_message(sids: List[str], message: str):
 
     # message privately everyone on the list
     if thread_name.startswith('timer_task') or thread_name == 'match_players':
+        
         for sid in sids:
+            if sid.startswith('bot_'):
+                continue
             running.socketio.send(message, to=sid)
+    
     else:
+        
         for sid in sids:
+            if sid.startswith('bot_'):
+                continue
             send(message, to=sid)
 
 
@@ -39,10 +46,17 @@ def send_command(sids: List[str], event: str, message: dict):
     thread_name = threading.current_thread().name
 
     if thread_name.startswith('timer_task') or thread_name == 'match_players':
+    
         for sid in sids:
+            if sid.startswith('bot_'):
+                continue
             running.socketio.emit(event, message, to=sid)
+    
     else:
+    
         for sid in sids:
+            if sid.startswith('bot_'):
+                continue
             emit(event, message, to=sid)
 
 
