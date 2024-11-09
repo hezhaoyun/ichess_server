@@ -25,30 +25,54 @@ class Game:
 
         self.start_time = None
 
-        self.player_turn = 0
-        self.this_turn_move_made = False
+        self.current_player_index: int = 0
 
         self.board = chess.Board()
         self.is_game_over = False
 
-        self.previous_move = None  # 记录上一步
-        self.draw_proposer = None  # 记录谁发起求和
-        self.takeback_proposer = None  # 记录谁请求悔棋
+        self.game_state = {
+            'is_over': False,
+            'previous_move': None,
+            'draw_proposer': None,
+            'takeback_proposer': None
+        }
 
         self.bot_sid = bot_sid
         self.engine = None
 
-        if bot_sid:
-            self.engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-            # 设置合适的引擎强度
-            bot_player = player_of(self.bot_sid)
-            bot_level = level_of(bot_player['elo'])
-            self.engine.configure({"Skill Level": bot_level})  # 1-20之间调整
+        self.setup_bot(bot_sid)
 
-        self.first_turn()
+        self.start_game()
 
-    def opponent_of(self, player: str) -> str:
-        return self.players[(self.players.index(player) + 1) % 2]
+    def setup_bot(self, bot_sid: str) -> None:
+        """设置机器人引擎"""
+        if not bot_sid:
+            return
+            
+        self.engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+        bot_player = player_of(bot_sid)
+        bot_level = level_of(bot_player['elo'])
+        self.engine.configure({"Skill Level": bot_level})
+
+    def start_game(self) -> None:
+        """开始新游戏"""
+        self.start_time = time.time()
+        running.socketio.start_background_task(target=self.timer_task)
+        
+        self.new_board_state()
+        
+        if self.bot_sid and self.players[self.current_player_index] == self.bot_sid:
+            self.make_bot_move()
+        else:
+            send_command([self.players[self.current_player_index]], 'go', {})
+            
+        logger.info(f'等待玩家走子，对局ID = {self.game_id}')
+
+    def make_bot_move(self) -> None:
+        """机器人走子"""
+        result = self.engine.play(self.board, chess.engine.Limit(time=1.0))
+        if self.on_move({'move': str(result.move)}, self.bot_sid):
+            self.after_move()
 
     def timer_task(self):
 
@@ -59,11 +83,11 @@ class Game:
             running.socketio.sleep(1)
             self.update_timer()
 
-            current = self.players[self.player_turn]
+            current = self.players[self.current_player_index]
             opponent = self.opponent_of(current)
 
-            current_time = int(self.game_times[self.player_turn])
-            opponent_time = int(self.game_times[(self.player_turn + 1) % 2])
+            current_time = int(self.game_times[self.current_player_index])
+            opponent_time = int(self.game_times[(self.current_player_index + 1) % 2])
 
             if current_time < 0 or opponent_time < 0:
                 loser = current if current_time < 0 else opponent
@@ -82,28 +106,8 @@ class Game:
         # Calculate elapsed time based on current time and subtract it from current player's remaining time
         current_time = time.time()
         elapsed = current_time - self.start_time
-        self.game_times[self.player_turn] -= elapsed
+        self.game_times[self.current_player_index] -= elapsed
         self.start_time = current_time
-
-    def first_turn(self):
-        self.player_turn = 0  # index of player that is ought to make a move
-        self.last_player = 1  # index of a player that made move last time
-
-        self.start_time = time.time()
-        running.socketio.start_background_task(target=self.timer_task)
-
-        self.new_board_state()
-
-        if self.bot_sid and self.players[self.player_turn] == self.bot_sid:
-            # 机器人思考并走子
-            result = self.engine.play(self.board, chess.engine.Limit(time=1.0))
-            if self.on_move({'move': str(result.move)}, self.bot_sid):
-                self.after_move()
-
-        else:
-            send_command([self.players[self.player_turn]], 'go', {})
-
-        logger.info(f'Waiting for a move from player, game ID = {self.game_id}')
 
     def new_board_state(self):
         # This send_to out the board state to both players
@@ -112,63 +116,44 @@ class Game:
         logger.info(self.board)
 
     def after_move(self):
+        """处理走子后的状态"""
+        if not self.check_players_connected():
+            return self.handle_disconnection()
+            
+        if self.check_game_end():
+            return
+            
+        self.prepare_next_turn()
+        
+    def check_game_end(self) -> bool:
+        """检查游戏是否结束"""
+        if self.board.is_checkmate():
+            self.handle_checkmate()
+            return True
+        
+        if self.board.is_stalemate():
+            self.draw('僵局！')
+            update_elo_after_game(self.player1, self.player2, 0.5)
+            return True
+            
+        if self.board.is_insufficient_material():
+            self.draw('子力不足！')
+            update_elo_after_game(self.player1, self.player2, 0.5)
+            return True
+            
+        return False
 
-        # Verify if both players are still connected
-        if self.is_player_connected(self.player1) and self.is_player_connected(self.player2):
-            # draw conditions
-            if not self.board.is_stalemate():
-                if not self.board.is_insufficient_material():
-                    # has the game been won
-                    if not self.board.is_checkmate():
-                        if not self.is_game_over:
-                            # WE GET TO PLAY, HURRAY
-                            # sending board state to players
-                            self.new_board_state()
-
-                            # changing turns
-                            self.this_turn_move_made = False
-                            self.player_turn = (self.player_turn + 1) % 2
-                            self.last_player = (self.last_player + 1) % 2
-
-                            if self.bot_sid and self.players[self.player_turn] == self.bot_sid:
-                                # 机器人思考并走子
-                                result = self.engine.play(self.board, chess.engine.Limit(time=1.0))
-                                if self.on_move({'move': str(result.move)}, self.bot_sid):
-                                    self.after_move()
-
-                            else:
-                                # message next player of his turn
-                                send_command([self.players[self.player_turn]], 'go', {})
-
-                            # update timer, and reset the start time for next turn
-                            self.update_timer()
-
-                    else:
-                        # player who made the last move won
-                        self.declare_loser([self.players[self.last_player]], '绝杀！')
-                        self.declare_winner([self.players[self.player_turn]], '绝杀！')
-                        update_elo_after_game(self.players[self.player_turn], self.players[self.last_player], 1)
-
-                else:
-                    # is a stalemate due to insufficient material
-                    self.draw('子力不足！')
-                    update_elo_after_game(self.player1, self.player2, 0.5)
-
-            else:
-                # is a stalemate
-                self.draw('僵局！')
-                update_elo_after_game(self.player1, self.player2, 0.5)
-
+    def prepare_next_turn(self) -> None:
+        """准备下一回合"""
+        self.new_board_state()
+        self.current_player_index = (self.current_player_index + 1) % 2
+        
+        if self.bot_sid and self.players[self.current_player_index] == self.bot_sid:
+            self.make_bot_move()
         else:
-            # one of the players has disconnected
-            # declaring winners
-            if not self.is_player_connected(self.player1):
-                self.declare_winner([self.player2], '对手退出对局了！')
-                update_elo_after_game(self.player2, self.player1, 1)
-
-            else:
-                self.declare_winner([self.player1], '对手退出对局了！')
-                update_elo_after_game(self.player1, self.player2, 1)
+            send_command([self.players[self.current_player_index]], 'go', {})
+            
+        self.update_timer()
 
     def is_player_connected(self, player: str) -> bool:
         if player in running.online_players or player.startswith('bot_'):
@@ -189,13 +174,10 @@ class Game:
         self.game_over()
 
     def player_disconnected(self, player: str):
-        if self.player1 == player:
-            self.declare_winner([self.player2], '对手退出对局了！')
-            update_elo_after_game(self.player2, self.player1, 1)
-
-        elif (self.player2 == player):
-            self.declare_winner([self.player1], '对手退出对局了！')
-            update_elo_after_game(self.player1, self.player2, 1)
+        """处理玩家断开连接的情况"""
+        winner = self.player2 if self.player1 == player else self.player1
+        self.declare_winner([winner], '对手退出对局了！')
+        update_elo_after_game(winner, player, 1)
 
     def game_over(self):
 
@@ -234,7 +216,7 @@ class Game:
 
         if 'move' in move and self.verify_move(move['move']):
             self.make_move(move['move'], self.opponent_of(player))
-            self.game_times[self.player_turn] += self.step_increment_time
+            self.game_times[self.current_player_index] += self.step_increment_time
             return True
 
         else:
@@ -257,13 +239,11 @@ class Game:
 
         send_command([opponent], 'move', {'move': self.board.peek().uci()})
 
-        self.this_turn_move_made = True
-
     def on_draw_proposal(self, proposer: str) -> bool:
 
-        if self.draw_proposer is None:
+        if self.game_state['draw_proposer'] is None:
 
-            self.draw_proposer = proposer
+            self.game_state['draw_proposer'] = proposer
             opponent = self.opponent_of(proposer)
 
             if self.bot_sid and opponent == self.bot_sid:
@@ -281,16 +261,16 @@ class Game:
 
     def on_draw_response(self, responder: str, accepted: bool) -> bool:
 
-        if self.draw_proposer and responder == self.opponent_of(self.draw_proposer):
+        if self.game_state['draw_proposer'] and responder == self.opponent_of(self.game_state['draw_proposer']):
 
             if accepted:
                 self.draw('和棋达成！')
                 update_elo_after_game(self.player1, self.player2, 0.5)
 
             else:
-                send_command([self.draw_proposer], 'draw_declined', {})
+                send_command([self.game_state['draw_proposer']], 'draw_declined', {})
 
-            self.draw_proposer = None
+            self.game_state['draw_proposer'] = None
 
             return True
 
@@ -298,9 +278,9 @@ class Game:
 
     def on_takeback_proposal(self, proposer: str) -> bool:
 
-        if self.takeback_proposer is None and len(self.board.move_stack) > 0:
+        if self.game_state['takeback_proposer'] is None and len(self.board.move_stack) > 0:
 
-            self.takeback_proposer = proposer
+            self.game_state['takeback_proposer'] = proposer
             opponent = self.opponent_of(proposer)
 
             if self.bot_sid and opponent == self.bot_sid:
@@ -318,7 +298,7 @@ class Game:
 
     def on_takeback_response(self, responder: str, accepted: bool) -> bool:
 
-        if self.takeback_proposer and responder == self.opponent_of(self.takeback_proposer):
+        if self.game_state['takeback_proposer'] and responder == self.opponent_of(self.game_state['takeback_proposer']):
 
             if accepted:
 
@@ -334,25 +314,24 @@ class Game:
                     self.start_time = time.time()
 
                     # 轮到发起悔棋方重新走棋
-                    self.player_turn = self.players.index(self.takeback_proposer)
-                    self.last_player = (self.player_turn + 1) % 2
+                    self.current_player_index = self.players.index(self.game_state['takeback_proposer'])
 
                     # 通知双方
                     send_command(self.players, 'takeback_success', {})
 
                     self.new_board_state()
-                    send_command([self.players[self.player_turn]], 'go', {})
+                    send_command([self.players[self.current_player_index]], 'go', {})
 
                 else:
                     # 棋步不足,拒绝悔棋
-                    send_command([self.takeback_proposer], 'takeback_declined', {
+                    send_command([self.game_state['takeback_proposer']], 'takeback_declined', {
                         'reason': '棋步不足，无法悔棋！'
                     })
 
             else:
-                send_command([self.takeback_proposer], 'takeback_declined', {})
+                send_command([self.game_state['takeback_proposer']], 'takeback_declined', {})
 
-            self.takeback_proposer = None
+            self.game_state['takeback_proposer'] = None
 
             return True
 
@@ -361,3 +340,49 @@ class Game:
     def __del__(self):
         if self.engine:
             self.engine.quit()
+
+    def check_players_connected(self) -> bool:
+        """检查所有玩家是否都保持连接
+        
+        Returns:
+            bool: 如果所有玩家都在线返回True，否则返回False
+        """
+        for player in self.players:
+            if not self.is_player_connected(player):
+                return False
+        return True
+
+    def handle_disconnection(self) -> None:
+        """处理玩家断开连接的情况"""
+        # 找出断开连接的玩家
+        disconnected_player = next(
+            (player for player in [self.player1, self.player2] 
+             if not self.is_player_connected(player)), 
+            None
+        )
+        if disconnected_player:
+            self.player_disconnected(disconnected_player)
+
+    def handle_checkmate(self) -> None:
+        """处理将军结束的情况"""
+        # 获胜者是上一个走子的玩家（因为是他造成了将军）
+        winner = self.players[self.current_player_index]
+        loser = self.opponent_of(winner)
+        
+        # 通知玩家游戏结果
+        self.declare_winner([winner], '绝杀！')
+        self.declare_loser([loser], '你被绝杀了！')
+        
+        # 更新ELO分数
+        update_elo_after_game(winner, loser, 1)
+
+    def opponent_of(self, player: str) -> str:
+        """返回指定玩家的对手
+        
+        Args:
+            player: 当前玩家的ID
+            
+        Returns:
+            str: 对手玩家的ID
+        """
+        return self.player2 if player == self.player1 else self.player1

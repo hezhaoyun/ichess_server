@@ -158,92 +158,124 @@ def on_message(data):
     logger.info(f'{request.sid} sent a message: {data}')
 
 
+# 常量定义
+WELCOME_MESSAGE = '欢迎来到 Chessroad!'
+SERVER_SECRET = 'chessroad-up-up-day-day'
+
+# 匹配系统常量
+class MatchConfig:
+    DIFF_INIT = 1          # 初始等级差距
+    DIFF_INCREMENT = 1     # 每次递增的等级差距
+    DIFF_MAX = 4           # 最大等级差距
+    BOT_WAIT_TIME = 5      # 等待机器人匹配时间（秒）
+    CHECK_INTERVAL = 5     # 匹配检查间隔（秒）
+    
+    BOT_NAMES = [
+        "棋艺高手", "棋道大师", "棋林高手", 
+        "棋坛新秀", "棋艺精湛", "棋道高人", 
+        "棋坛高手", "棋艺超群"
+    ]
+
+# 游戏配置
+class GameConfig:
+    DEFAULT_TIME_LIMIT = 600  # 默认时间限制（秒）
+    DEFAULT_INCREMENT = 5     # 默认时间增量（秒）
+
 def welcome():
-    # a bunch of on-login messages
-    send_message([request.sid], '欢迎来到 Chessroad!')
-    send_message([request.sid], f"服务器时间: {datetime.now().strftime('%H:%M')}")
-    send_message([request.sid], f'当前在线玩家: {len(running.online_players)}')
-    send_message([request.sid], f'当前匹配对局等待列表: {len(running.waiting_players) + 1}')
+    """发送欢迎消息给新连接的客户端"""
+    messages = [
+        WELCOME_MESSAGE,
+        f"服务器时间: {datetime.now().strftime('%H:%M')}",
+        f'当前在线玩家: {len(running.online_players)}',
+        f'当前匹配对局等待列表: {len(running.waiting_players) + 1}'
+    ]
+    for message in messages:
+        send_message([request.sid], message)
 
-
-# 后台配对任务
 def match_players():
-
-    MATCH_DIFF_INIT = 1     # 初始等级差距
-    MATCH_DIFF_INC = 1      # 每次递增的等级差距
-    MATCH_DIFF_MAX = 4      # 最大等级差距
-
-    # 等待多久后使用机器人（秒）
-    BOT_WAIT_TIME = 5
-    # 机器人名字池
-    BOT_NAMES = ["棋艺高手", "棋道大师", "棋林高手", "棋坛新秀", "棋艺精湛", "棋道高人", "棋坛高手", "棋艺超群"]
-
+    """
+    后台匹配系统主循环
+    - 处理玩家匹配
+    - 超时后创建机器人对手
+    """
     threading.current_thread().name = 'match_players'
 
     while True:
-        socketio.sleep(5)  # 每5秒检查一次匹配情况
+        socketio.sleep(MatchConfig.CHECK_INTERVAL)
+        process_matching_queue()
 
-        current_time = time.time()
-        to_remove = []  # 将要从等待队列中移除的配对玩家
+def process_matching_queue():
+    """处理等待队列中的玩家匹配"""
+    current_time = time.time()
+    to_remove = []  # 将要从等待队列中移除的配对玩家
 
-        for sid, join_time in running.waiting_players.items():
+    for sid, join_time in running.waiting_players.items():
+        if sid in to_remove:
+            continue
 
-            # 跳过已配对的玩家
-            if sid in to_remove:
-                continue
+        time_waited = current_time - join_time
+        if try_match_player(sid, time_waited, to_remove):
+            continue
+            
+        if try_create_bot_match(sid, time_waited, to_remove):
+            continue
 
-            time_waited = current_time - join_time
-            level = level_of(player_of(sid)['elo'])
+    # 清理已匹配的玩家
+    for sid in to_remove:
+        running.waiting_players.pop(sid, None)
 
-            allowed_difference = min(
-                MATCH_DIFF_INIT + (MATCH_DIFF_INC * int(time_waited / 5)),
-                MATCH_DIFF_MAX
-            )
+def try_match_player(sid: str, time_waited: float, to_remove: List[str]) -> bool:
+    """尝试为玩家匹配对手"""
+    level = level_of(player_of(sid)['elo'])
+    
+    allowed_difference = min(
+        MatchConfig.DIFF_INIT + (MatchConfig.DIFF_INCREMENT * int(time_waited / 5)),
+        MatchConfig.DIFF_MAX
+    )
 
-            for other_sid, _ in running.waiting_players.items():
+    for other_sid, _ in running.waiting_players.items():
+        if other_sid == sid or other_sid in to_remove:
+            continue
 
-                # 跳过自己或已配对的玩家
-                if other_sid == sid or other_sid in to_remove:
-                    continue
+        if is_suitable_opponent(level, other_sid, allowed_difference):
+            create_match([sid, other_sid], to_remove)
+            return True
+            
+    return False
 
-                other_level = level_of(player_of(other_sid)['elo'])
+def is_suitable_opponent(player_level: int, opponent_sid: str, allowed_difference: int) -> bool:
+    """检查对手是否适合匹配"""
+    opponent_level = level_of(player_of(opponent_sid)['elo'])
+    return abs(player_level - opponent_level) <= allowed_difference
 
-                # 寻找合适对手
-                if abs(level - other_level) <= allowed_difference:
-                    # 找到合适对手，进行配对
-                    pair = [sid, other_sid]
-                    to_remove.extend(pair)
+def try_create_bot_match(sid: str, time_waited: float, to_remove: List[str]) -> bool:
+    """尝试创建机器人对战"""
+    if time_waited > MatchConfig.BOT_WAIT_TIME and sid not in to_remove:
+        bot_sid = create_bot_player(sid)
+        create_match([sid, bot_sid], to_remove, is_bot=bot_sid)
+        return True
+    
+    return False
 
-                    send_message(pair, '找到匹配对局.. 连接中')
-                    make_game(pair)
-                    break
+def create_bot_player(player_sid: str) -> str:
+    """创建并初始化机器人玩家"""
+    bot_sid = f"bot_{time.time()}"
+    bot_name = choice(MatchConfig.BOT_NAMES)
+    
+    join(bot_sid, bot_sid, bot_name)
+    
+    # 设置机器人等级
+    bot_player = player_of(bot_sid)
+    bot_player['elo'] = player_of(player_sid)['elo'] + randint(-100, 100)
+    update_elo(bot_player)
+    
+    return bot_sid
 
-            # 如果等待时间超过阈值，创建机器人对手
-            if time_waited > BOT_WAIT_TIME and sid not in to_remove:
-                # 创建机器人玩家
-                bot_sid = f"bot_{time.time()}"
-                bot_name = choice(BOT_NAMES)
-
-                # 注册机器人
-                join(bot_sid, bot_sid, bot_name)
-
-                # 根据玩家等级设置机器人等级
-                bot_player = player_of(bot_sid)
-                bot_player['elo'] = player_of(sid)['elo'] + randint(-100, 100)
-                update_elo(bot_player)
-
-                # 创建游戏
-                pair = [sid, bot_sid]
-                to_remove.append(sid)
-
-                send_message([sid], '找到匹配对局.. 连接中')
-                make_game(pair, is_bot=bot_sid)
-                break
-
-        # 从等待队列中移除已配对的玩家
-        for sid in to_remove:
-            running.waiting_players.pop(sid, None)
-
+def create_match(pair: List[str], to_remove: List[str], is_bot: str = None):
+    """创建对局并通知玩家"""
+    to_remove.extend([p for p in pair if not p.startswith('bot_')])
+    send_message(pair, '找到匹配对局.. 连接中')
+    make_game(pair, is_bot=is_bot)
 
 def make_game(pair: List[str], is_bot: str = None):
 
