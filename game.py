@@ -99,10 +99,9 @@ class Game:
             result = self.engine.play(self.board, chess.engine.Limit(time=1.0))
             if self.on_move({'move': str(result.move)}, self.bot_sid):
                 self.after_move()
-        
+
         else:
             send_command([self.players[self.player_turn]], 'go', {})
-
 
         logger.info(f'Waiting for a move from player, game ID = {self.game_id}')
 
@@ -117,11 +116,11 @@ class Game:
         # Verify if both players are still connected
         if self.is_player_connected(self.player1) and self.is_player_connected(self.player2):
             # draw conditions
-            if not (self.board.is_stalemate()):
-                if not (self.board.is_insufficient_material()):
+            if not self.board.is_stalemate():
+                if not self.board.is_insufficient_material():
                     # has the game been won
-                    if not (self.board.is_checkmate()):
-                        if not (self.is_game_over):
+                    if not self.board.is_checkmate():
+                        if not self.is_game_over:
                             # WE GET TO PLAY, HURRAY
                             # sending board state to players
                             self.new_board_state()
@@ -136,14 +135,10 @@ class Game:
                                 result = self.engine.play(self.board, chess.engine.Limit(time=1.0))
                                 if self.on_move({'move': str(result.move)}, self.bot_sid):
                                     self.after_move()
-                            
+
                             else:
                                 # message next player of his turn
-                                send_command(
-                                    [self.players[self.player_turn]],
-                                    'go',
-                                    {'last_move': self.board.peek().uci()}
-                                )
+                                send_command([self.players[self.player_turn]], 'go', {})
 
                             # update timer, and reset the start time for next turn
                             self.update_timer()
@@ -167,7 +162,7 @@ class Game:
         else:
             # one of the players has disconnected
             # declaring winners
-            if not (self.is_player_connected(self.player1)):
+            if not self.is_player_connected(self.player1):
                 self.declare_winner([self.player2], '对手退出对局了！')
                 update_elo_after_game(self.player2, self.player1, 1)
 
@@ -238,7 +233,7 @@ class Game:
         # processes messages and return True/False depending if it was valid
 
         if 'move' in move and self.verify_move(move['move']):
-            self.make_move(move['move'])
+            self.make_move(move['move'], self.opponent_of(player))
             self.game_times[self.player_turn] += self.step_increment_time
             return True
 
@@ -256,9 +251,12 @@ class Game:
         except (ValueError, IndexError) as wrong_format_or_illegal_move:
             return False
 
-    def make_move(self, move: str):
+    def make_move(self, move: str, opponent: str):
         # Makes the move on the board
         self.board.push_uci(move)
+
+        send_command([opponent], 'move', {'move': self.board.peek().uci()})
+
         self.this_turn_move_made = True
 
     def on_draw_proposal(self, proposer: str) -> bool:

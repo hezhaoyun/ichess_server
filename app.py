@@ -174,7 +174,7 @@ def match_players():
     MATCH_DIFF_MAX = 4      # 最大等级差距
 
     # 等待多久后使用机器人（秒）
-    BOT_WAIT_TIME = 15
+    BOT_WAIT_TIME = 5
     # 机器人名字池
     BOT_NAMES = ["棋艺高手", "棋道大师", "棋林高手", "棋坛新秀", "棋艺精湛", "棋道高人", "棋坛高手", "棋艺超群"]
 
@@ -250,17 +250,19 @@ def make_game(pair: List[str], is_bot: str = None):
     shuffle(pair)
 
     white, black = pair[0], pair[1]
+    white_player = player_of(white)
+    black_player = player_of(black)
 
     # Sending over the command codes to initialize game modes on clients
     send_command([white], 'game_mode', {
-        'side': 'white', 'opponent': name_of(black), 'opponent_elo': player_of(black)['elo']
+        'side': 'white', 'white_player': white_player, 'black_player': black_player
     })
     send_command([black], 'game_mode', {
-        'side': 'black', 'opponent': name_of(white), 'opponent_elo': player_of(white)['elo']
+        'side': 'black', 'white_player': white_player, 'black_player': black_player
     })
 
     # running the game
-    game = Game(pair, 180, 5, bot_sid=is_bot)
+    game = Game(pair, 600, 5, bot_sid=is_bot)
     running.games.append(game)
 
     logger.info(f'Hosted a game. ID = {game.game_id}' + (' (with bot)' if is_bot else ''))
