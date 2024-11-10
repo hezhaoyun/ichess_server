@@ -14,22 +14,15 @@ def load(pid: str) -> Dict[str, Any]:
 
 
 def upsert(user: Dict[str, Any]) -> Dict[str, Any]:
-
-    # Update the user information in the database
     result = players.update_one(
         filter={'pid': user['pid']},
         update={'$set': user},
         upsert=True
     )
 
-    # Return True if the update was successful, False otherwise
     return result.acknowledged
 
 
 def delete_user(pid: str) -> bool:
-
-    # Delete the user from the database
     result = players.delete_one({'pid': pid})
-
-    # Return True if the user was successfully deleted
     return result.deleted_count == 1
