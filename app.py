@@ -308,4 +308,4 @@ def find_game(sid: str) -> Optional[Game]:
 if __name__ == '__main__':
     logger.info('Starting server...')
     socketio.start_background_task(target=match_players)
-    socketio.run(app)
+    socketio.run(app, host='0.0.0.0', port=8888)
