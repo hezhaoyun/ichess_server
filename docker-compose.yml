@@ -1,9 +1,9 @@
-version: '3.8'
+version: '3.3'
 
 services:
 
   chess_server:
-    image: python:3.9
+    image: python:3.10
     container_name: chess_server
     working_dir: /app
     volumes:
