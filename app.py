@@ -7,9 +7,8 @@ from typing import List, Optional
 from flask import Flask, request
 
 from game import Game
-from player import join, level_of, name_of, player_of, update_elo
+from player import join, level_of, player_of, update_elo
 from share import create_socketio, logger, running, send_command, send_message
-
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'chessroad-up-up-day-day'

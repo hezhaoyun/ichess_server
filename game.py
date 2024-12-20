@@ -8,7 +8,11 @@ import chess.engine
 from player import level_of, player_of, update_elo_after_game
 from share import logger, running, send_command, send_message
 
-STOCKFISH_PATH = "./stockfish-17-m1"
+# for mac with apple silicon
+STOCKFISH_PATH = "./stockfish-apple-silicon"
+
+# for linux with popcnt (slower than avx2)
+STOCKFISH_PATH = "./stockfish-linux-popcnt"
 
 
 class Game:
