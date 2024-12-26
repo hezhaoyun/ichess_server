@@ -63,6 +63,9 @@ def send_command(sids: List[str], event: str, message: dict):
 
 
 def get_logger(mod_name) -> logging.Logger:
+    if mod_name == '__main__':
+        mod_name = 'app'
+    
     logger = logging.getLogger(mod_name)
     logger.setLevel(logging.INFO)
 
