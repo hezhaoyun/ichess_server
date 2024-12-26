@@ -2,7 +2,7 @@ from typing import Any, Dict, Tuple, Optional
 
 from flask_socketio import send
 from dbc import load, upsert
-from share import logger
+from share import get_logger
 
 # 定义常量
 DEFAULT_ELO = 1500
@@ -17,6 +17,8 @@ JoinInfo = Tuple[str, str]
 # 缓存
 join_cache: Dict[str, JoinInfo] = {}
 player_cache: Dict[str, PlayerData] = {}
+
+logger = get_logger(__name__)
 
 
 def join(sid: str, pid: str, name: str) -> None:

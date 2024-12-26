@@ -1,4 +1,6 @@
+import datetime
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import threading
 from typing import Dict, List
 
@@ -27,14 +29,14 @@ def send_message(sids: List[str], message: str):
 
     # message privately everyone on the list
     if thread_name.startswith('timer_task') or thread_name == 'match_players':
-        
+
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
             running.socketio.send(message, to=sid)
-    
+
     else:
-        
+
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
@@ -46,30 +48,31 @@ def send_command(sids: List[str], event: str, message: dict):
     thread_name = threading.current_thread().name
 
     if thread_name.startswith('timer_task') or thread_name == 'match_players':
-    
+
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
             running.socketio.emit(event, message, to=sid)
-    
+
     else:
-    
+
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
             emit(event, message, to=sid)
 
 
-def get_logger() -> logging.Logger:
-    logger = logging.getLogger('CRS')
+def get_logger(mod_name) -> logging.Logger:
+    logger = logging.getLogger(mod_name)
     logger.setLevel(logging.INFO)
 
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(console_handler)
+    handler = TimedRotatingFileHandler(f'./logs/{mod_name}.log', when='midnight', interval=1, backupCount=7)
+    handler.suffix = '%Y-%m-%d'
+    handler.setLevel(logging.INFO)
+
+    formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
+    handler.setFormatter(formatter)
+
+    logger.addHandler(handler)
 
     return logger
-
-
-logger = get_logger()

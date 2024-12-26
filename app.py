@@ -8,11 +8,13 @@ from flask import Flask, request
 
 from game import Game
 from player import join, level_of, player_of, update_elo
-from share import create_socketio, logger, running, send_command, send_message
+from share import create_socketio, get_logger, running, send_command, send_message
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'chessroad-up-up-day-day'
 socketio = create_socketio(app)
+
+logger = get_logger(__name__)
 
 
 @app.route('/')
@@ -159,23 +161,28 @@ WELCOME_MESSAGE = '欢迎来到 Chessroad!'
 SERVER_SECRET = 'chessroad-up-up-day-day'
 
 # 匹配系统常量
+
+
 class MatchConfig:
     DIFF_INIT = 1          # 初始等级差距
     DIFF_INCREMENT = 1     # 每次递增的等级差距
     DIFF_MAX = 4           # 最大等级差距
     BOT_WAIT_TIME = 15     # 等待机器人匹配时间（秒）
     CHECK_INTERVAL = 5     # 匹配检查间隔（秒）
-    
+
     BOT_NAMES = [
-        "棋艺高手", "棋道大师", "棋林高手", 
-        "棋坛新秀", "棋艺精湛", "棋道高人", 
+        "棋艺高手", "棋道大师", "棋林高手",
+        "棋坛新秀", "棋艺精湛", "棋道高人",
         "棋坛高手", "棋艺超群"
     ]
 
 # 游戏配置
+
+
 class GameConfig:
     DEFAULT_TIME_LIMIT = 600  # 默认时间限制（秒）
     DEFAULT_INCREMENT = 5     # 默认时间增量（秒）
+
 
 def welcome():
     """发送欢迎消息给新连接的客户端"""
@@ -187,6 +194,7 @@ def welcome():
     ]
     for message in messages:
         send_message([request.sid], message)
+
 
 def match_players():
     """
@@ -200,6 +208,7 @@ def match_players():
         socketio.sleep(MatchConfig.CHECK_INTERVAL)
         process_matching_queue()
 
+
 def process_matching_queue():
     """处理等待队列中的玩家匹配"""
     current_time = time.time()
@@ -212,7 +221,7 @@ def process_matching_queue():
         time_waited = current_time - join_time
         if try_match_player(sid, time_waited, to_remove):
             continue
-            
+
         if try_create_bot_match(sid, time_waited, to_remove):
             continue
 
@@ -220,10 +229,11 @@ def process_matching_queue():
     for sid in to_remove:
         running.waiting_players.pop(sid, None)
 
+
 def try_match_player(sid: str, time_waited: float, to_remove: List[str]) -> bool:
     """尝试为玩家匹配对手"""
     level = level_of(player_of(sid)['elo'])
-    
+
     allowed_difference = min(
         MatchConfig.DIFF_INIT + (MatchConfig.DIFF_INCREMENT * int(time_waited / 5)),
         MatchConfig.DIFF_MAX
@@ -236,13 +246,15 @@ def try_match_player(sid: str, time_waited: float, to_remove: List[str]) -> bool
         if is_suitable_opponent(level, other_sid, allowed_difference):
             create_match([sid, other_sid], to_remove)
             return True
-            
+
     return False
+
 
 def is_suitable_opponent(player_level: int, opponent_sid: str, allowed_difference: int) -> bool:
     """检查对手是否适合匹配"""
     opponent_level = level_of(player_of(opponent_sid)['elo'])
     return abs(player_level - opponent_level) <= allowed_difference
+
 
 def try_create_bot_match(sid: str, time_waited: float, to_remove: List[str]) -> bool:
     """尝试创建机器人对战"""
@@ -250,28 +262,31 @@ def try_create_bot_match(sid: str, time_waited: float, to_remove: List[str]) -> 
         bot_sid = create_bot_player(sid)
         create_match([sid, bot_sid], to_remove, is_bot=bot_sid)
         return True
-    
+
     return False
+
 
 def create_bot_player(player_sid: str) -> str:
     """创建并初始化机器人玩家"""
     bot_sid = f"bot_{time.time()}"
     bot_name = choice(MatchConfig.BOT_NAMES)
-    
+
     join(bot_sid, bot_sid, bot_name)
-    
+
     # 设置机器人等级
     bot_player = player_of(bot_sid)
     bot_player['elo'] = player_of(player_sid)['elo'] + randint(-100, 100)
     update_elo(bot_player)
-    
+
     return bot_sid
+
 
 def create_match(pair: List[str], to_remove: List[str], is_bot: str = None):
     """创建对局并通知玩家"""
     to_remove.extend([p for p in pair if not p.startswith('bot_')])
     send_message(pair, '找到匹配对局.. 连接中')
     make_game(pair, is_bot=is_bot)
+
 
 def make_game(pair: List[str], is_bot: str = None):
     """创建对局并通知玩家"""
