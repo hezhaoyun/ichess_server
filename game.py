@@ -256,7 +256,6 @@ class Game:
     def on_takeback_response(self, responder: str, accepted: bool) -> bool:
         if self.game_state['takeback_proposer'] and responder == self.opponent_of(self.game_state['takeback_proposer']):
             if accepted:
-
                 # Check if there are at least two moves to take back
                 if len(self.board.move_stack) >= 2:
                     # Take back the last two moves of both players
