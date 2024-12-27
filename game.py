@@ -210,10 +210,7 @@ class Game:
                 self.on_draw_response(self.bot_sid, True)
                 return True
 
-            # TODO: delete message
-            send_command([opponent], 'draw_request', {
-                'message': 'Opponent proposes a draw, do you accept?'
-            })
+            send_command([opponent], 'draw_request', {})
 
             return True
 
@@ -244,10 +241,7 @@ class Game:
                 self.on_takeback_response(self.bot_sid, True)
                 return True
 
-            # TODO: delete message
-            send_command([opponent], 'takeback_request', {
-                'message': 'Opponent requests a takeback, do you accept?'
-            })
+            send_command([opponent], 'takeback_request', {})
 
             return True
 
@@ -278,10 +272,7 @@ class Game:
 
                 else:
                     # Not enough moves, decline takeback
-                    # TODO: delete reason
-                    send_command([self.game_state['takeback_proposer']], 'takeback_declined', {
-                        'reason': 'Not enough moves to take back!'
-                    })
+                    send_command([self.game_state['takeback_proposer']], 'takeback_declined', {})
 
             else:
                 send_command([self.game_state['takeback_proposer']], 'takeback_declined', {})
