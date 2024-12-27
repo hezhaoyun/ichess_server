@@ -294,8 +294,7 @@ def make_game(pair: List[str], is_bot: str = None):
     shuffle(pair)
 
     white, black = pair[0], pair[1]
-    white_player = player_of(white)
-    black_player = player_of(black)
+    white_player, black_player = player_of(white), player_of(black)
 
     # Sending over the command codes to initialize game modes on clients
     send_command([white], 'game_mode', {

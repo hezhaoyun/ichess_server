@@ -230,7 +230,7 @@ class Game:
 
     def return_to_lobby_after_game(self):
         for player in self.players:
-            send_message([player], 'Type MATCH to match immediately.')
+            send_message([player], 'Tap MATCH to match immediately.')
             send_command([player], 'waiting_match', {})
 
     def declare_winner(self, players: List[str], reason: str):
