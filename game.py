@@ -1,4 +1,3 @@
-import platform
 import time
 from typing import Dict, List
 
@@ -6,32 +5,15 @@ import chess
 import chess.engine
 
 from player import level_of, player_of, update_elo_after_game
-from share import get_logger, running, send_command, send_message
+from share import (Reasons, get_logger, get_native_engine_path, running,
+                   send_command, send_message)
 from stockfish_pool import StockfishPool
-
-STOCKFISH_PATH_LINUX_POPCNT = './stockfish/linux-popcnt'
-STOCKFISH_PATH_LINUX_AVX2 = './stockfish/linux-avx2'  # faster than popcnt
-STOCKFISH_PATH_MAC_APPLE_SILICON = './stockfish/apple-silicon'
-
 
 logger = get_logger(__name__)
 
-# Determine CPU type and set Stockfish path
-if platform.system() == 'Linux':
-    if 'avx2' in platform.uname().machine:
-        STOCKFISH_PATH = STOCKFISH_PATH_LINUX_AVX2
-    else:
-        STOCKFISH_PATH = STOCKFISH_PATH_LINUX_POPCNT
-
-elif platform.system() == 'Darwin':
-    STOCKFISH_PATH = STOCKFISH_PATH_MAC_APPLE_SILICON
-
-else:
-    raise Exception('Unsupported operating system')
-
 
 class Game:
-    stockfish_pool = StockfishPool(STOCKFISH_PATH, max_size=5)  # Shared pool
+    stockfish_pool = StockfishPool(get_native_engine_path(), max_size=5)  # Shared pool
 
     def __init__(self, pair: List[str], total_time: int, step_increment_time: int, bot_sid=None):
         self.players = pair
@@ -144,7 +126,7 @@ class Game:
 
     def player_disconnected(self, player: str):
         winner = self.player2 if self.player1 == player else self.player1
-        self.declare_winner([winner], 'Opponent has left the game!')
+        self.declare_winner([winner], Reasons.Win.OPPONENT_LEFT)
         update_elo_after_game(winner, player, 1)
 
     def check_game_end(self) -> bool:
@@ -204,18 +186,18 @@ class Game:
         winner = self.players[self.current_player_index]
         loser = self.opponent_of(winner)
 
-        self.declare_winner([winner], 'Checkmate!')
-        self.declare_loser([loser], 'You have been checkmated!')
+        self.declare_winner([winner], Reasons.Win.CHECKMATE)
+        self.declare_loser([loser], Reasons.Lose.CHECKMATED)
 
         update_elo_after_game(winner, loser, 1)
 
     def on_resign(self, player: str):
         if player == self.player1:
-            self.declare_winner([self.player2], 'Opponent resigned!')
+            self.declare_winner([self.player2], Reasons.Win.OPPONENT_RESIGNED)
             update_elo_after_game(self.player2, self.player1, 1)
 
         else:
-            self.declare_winner([self.player1], 'Opponent resigned!')
+            self.declare_winner([self.player1], Reasons.Win.OPPONENT_RESIGNED)
             update_elo_after_game(self.player1, self.player2, 1)
 
     def on_draw_proposal(self, proposer: str) -> bool:
@@ -228,6 +210,7 @@ class Game:
                 self.on_draw_response(self.bot_sid, True)
                 return True
 
+            # TODO: delete message
             send_command([opponent], 'draw_request', {
                 'message': 'Opponent proposes a draw, do you accept?'
             })
@@ -261,6 +244,7 @@ class Game:
                 self.on_takeback_response(self.bot_sid, True)
                 return True
 
+            # TODO: delete message
             send_command([opponent], 'takeback_request', {
                 'message': 'Opponent requests a takeback, do you accept?'
             })
@@ -295,6 +279,7 @@ class Game:
 
                 else:
                     # Not enough moves, decline takeback
+                    # TODO: delete reason
                     send_command([self.game_state['takeback_proposer']], 'takeback_declined', {
                         'reason': 'Not enough moves to take back!'
                     })

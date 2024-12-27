@@ -1,4 +1,5 @@
 import logging
+import platform
 import threading
 from logging.handlers import TimedRotatingFileHandler
 from typing import Dict, List
@@ -57,7 +58,7 @@ def send_command(sids: List[str], event: str, data: dict):
 def get_logger(mod_name) -> logging.Logger:
     if mod_name == '__main__':
         mod_name = 'app'
-    
+
     logger = logging.getLogger(mod_name)
     logger.setLevel(logging.INFO)
 
@@ -71,3 +72,41 @@ def get_logger(mod_name) -> logging.Logger:
     logger.addHandler(handler)
 
     return logger
+
+
+def get_native_engine_path():
+    STOCKFISH_PATH_LINUX_POPCNT = './stockfish/linux-popcnt'
+    STOCKFISH_PATH_LINUX_AVX2 = './stockfish/linux-avx2'  # faster than popcnt
+    STOCKFISH_PATH_MAC_APPLE_SILICON = './stockfish/apple-silicon'
+
+    # Determine CPU type and set Stockfish path
+    if platform.system() == 'Linux':
+        if 'avx2' in platform.uname().machine:
+            STOCKFISH_PATH = STOCKFISH_PATH_LINUX_AVX2
+        else:
+            STOCKFISH_PATH = STOCKFISH_PATH_LINUX_POPCNT
+
+    elif platform.system() == 'Darwin':
+        STOCKFISH_PATH = STOCKFISH_PATH_MAC_APPLE_SILICON
+
+    else:
+        raise Exception('Unsupported operating system')
+
+    return STOCKFISH_PATH
+
+class Reasons:
+    class Win:
+        CHECKMATE = 'CHECKMATE'
+        OPPONENT_OUT_OF_TIME = 'OPPONENT_OUT_OF_TIME'
+        OPPONENT_RESIGNED = 'OPPONENT_RESIGNED'
+        OPPONENT_LEFT = 'OPPONENT_LEFT'
+    
+    class Lose:
+        CHECKMATED = 'CHECKMATED'
+        OUT_OF_TIME = 'OUT_OF_TIME'
+        RESIGNED = 'RESIGNED'
+    
+    class Draw:
+        STALEMATE = 'STALEMATE'
+        INSUFFICIENT_MATERIAL = 'INSUFFICIENT_MATERIAL'
+        CONSENSUS = 'CONSENSUS'

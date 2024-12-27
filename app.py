@@ -8,7 +8,7 @@ from flask import Flask, request
 
 from game import Game
 from player import join, level_of, player_of, update_elo, update_elo_after_game
-from share import (create_socketio, get_logger, running, send_command,
+from share import (Reasons, create_socketio, get_logger, running, send_command,
                    send_message)
 
 app = Flask(__name__)
@@ -337,8 +337,8 @@ def timer_task():
                 loser = current if current_time < 0 else opponent
                 winner = game.opponent_of(loser)
 
-                game.declare_loser([loser], 'You are out of time!')
-                game.declare_winner([winner], 'Opponent is out of time!')
+                game.declare_loser([loser], Reasons.Lose.OUT_OF_TIME)
+                game.declare_winner([winner], Reasons.Win.OPPONENT_OUT_OF_TIME)
 
                 update_elo_after_game(winner, loser, 1)
 
