@@ -2,8 +2,8 @@ from typing import Any, Dict
 
 from pymongo import MongoClient
 
-# client = MongoClient(host='127.0.0.1', port=27017)
 client = MongoClient(host='mongo_db', port=27017, username='zhaoyun', password='801129')
+# client = MongoClient(host='127.0.0.1', port=27017, username='zhaoyun', password='801129')
 
 db = client['ichess']
 players = db['players']
