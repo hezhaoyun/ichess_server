@@ -1,7 +1,6 @@
-import datetime
 import logging
-from logging.handlers import TimedRotatingFileHandler
 import threading
+from logging.handlers import TimedRotatingFileHandler
 from typing import Dict, List
 
 from flask import Flask
@@ -43,7 +42,7 @@ def send_message(sids: List[str], message: str):
             send(message, to=sid)
 
 
-def send_command(sids: List[str], event: str, message: dict):
+def send_command(sids: List[str], event: str, data: dict):
 
     thread_name = threading.current_thread().name
 
@@ -52,14 +51,14 @@ def send_command(sids: List[str], event: str, message: dict):
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
-            running.socketio.emit(event, message, to=sid)
+            running.socketio.emit(event, data, to=sid)
 
     else:
 
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
-            emit(event, message, to=sid)
+            emit(event, data, to=sid)
 
 
 def get_logger(mod_name) -> logging.Logger:
