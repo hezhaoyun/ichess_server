@@ -17,7 +17,7 @@ STOCKFISH_PATH_MAC_APPLE_SILICON = './stockfish/apple-silicon'
 
 logger = get_logger(__name__)
 
-# 判断 CPU 类型并设置 Stockfish 路径
+# Determine CPU type and set Stockfish path
 if platform.system() == 'Linux':
     if 'avx2' in platform.uname().machine:
         STOCKFISH_PATH = STOCKFISH_PATH_LINUX_AVX2
@@ -28,11 +28,11 @@ elif platform.system() == 'Darwin':
     STOCKFISH_PATH = STOCKFISH_PATH_MAC_APPLE_SILICON
 
 else:
-    raise Exception('不支持的操作系统')
+    raise Exception('Unsupported operating system')
 
 
 class Game:
-    stockfish_pool = StockfishPool(STOCKFISH_PATH, max_size=5)  # 共享池
+    stockfish_pool = StockfishPool(STOCKFISH_PATH, max_size=5)  # Shared pool
 
     def __init__(self, pair: List[str], total_time: int, step_increment_time: int, bot_sid=None):
 
@@ -72,7 +72,7 @@ class Game:
         else:
             send_command([self.players[self.current_player_index]], 'go', {})
 
-        logger.info(f'等待玩家走子，对局ID = {self.game_id}')
+        logger.info(f'Waiting for player to make a move, game ID = {self.game_id}')
 
     def timer_task(self):
 
@@ -93,8 +93,8 @@ class Game:
                 loser = current if current_time < 0 else opponent
                 winner = self.opponent_of(loser)
 
-                self.declare_loser([loser], '你超时了！')
-                self.declare_winner([winner], '对手超时！')
+                self.declare_loser([loser], 'You are out of time!')
+                self.declare_winner([winner], 'Opponent is out of time!')
 
                 update_elo_after_game(winner, loser, 1)
 
@@ -110,20 +110,20 @@ class Game:
         self.start_time = current_time
 
     def send_board_state(self):
-        # This send_to out the board state to both players
+        # This sends the board state to both players
         send_message(self.players, f'\n{str(self.board)}')
         logger.info(f'GAME STATUS. ID = {self.game_id}')
         logger.info(self.board)
 
     def make_bot_move(self) -> None:
-        # 获取引擎
+        # Get engine
         level = level_of(player_of(self.bot_sid)['elo'])
         engine = Game.stockfish_pool.get_engine(level)
 
         result = engine.play(self.board, chess.engine.Limit(time=1.0))
         self.on_move({'move': str(result.move)}, self.bot_sid)
 
-        # 思考后返还引擎
+        # Return engine after thinking
         Game.stockfish_pool.return_engine(engine)
 
     def on_move(self, move: Dict[str, str], player: str) -> bool:
@@ -137,7 +137,7 @@ class Game:
             return True
 
         else:
-            send_message([player], f'指令错误：{move}，请重新输入。')
+            send_message([player], f'Command error: {move}, please re-enter.')
             return False
 
     def verify_move(self, move: str) -> bool:
@@ -186,7 +186,7 @@ class Game:
 
     def player_disconnected(self, player: str):
         winner = self.player2 if self.player1 == player else self.player1
-        self.declare_winner([winner], '对手退出对局了！')
+        self.declare_winner([winner], 'Opponent has left the game!')
         update_elo_after_game(winner, player, 1)
 
     def check_game_end(self) -> bool:
@@ -196,12 +196,12 @@ class Game:
             return True
 
         if self.board.is_stalemate():
-            self.draw('僵局！')
+            self.draw('Stalemate!')
             update_elo_after_game(self.player1, self.player2, 0.5)
             return True
 
         if self.board.is_insufficient_material():
-            self.draw('子力不足！')
+            self.draw('Insufficient material!')
             update_elo_after_game(self.player1, self.player2, 0.5)
             return True
 
@@ -230,7 +230,7 @@ class Game:
 
     def return_to_lobby_after_game(self):
         for player in self.players:
-            send_message([player], '输入 MATCH 以立即匹配对局。')
+            send_message([player], 'Type MATCH to match immediately.')
             send_command([player], 'waiting_match', {})
 
     def declare_winner(self, players: List[str], reason: str):
@@ -248,18 +248,18 @@ class Game:
         winner = self.players[self.current_player_index]
         loser = self.opponent_of(winner)
 
-        self.declare_winner([winner], '绝杀！')
-        self.declare_loser([loser], '你被绝杀了！')
+        self.declare_winner([winner], 'Checkmate!')
+        self.declare_loser([loser], 'You have been checkmated!')
 
         update_elo_after_game(winner, loser, 1)
 
     def on_resign(self, player: str):
         if player == self.player1:
-            self.declare_winner([self.player2], '对手认输！')
+            self.declare_winner([self.player2], 'Opponent resigned!')
             update_elo_after_game(self.player2, self.player1, 1)
 
         else:
-            self.declare_winner([self.player1], '对手认输！')
+            self.declare_winner([self.player1], 'Opponent resigned!')
             update_elo_after_game(self.player1, self.player2, 1)
 
     def on_draw_proposal(self, proposer: str) -> bool:
@@ -275,7 +275,7 @@ class Game:
                 return True
 
             send_command([opponent], 'draw_request', {
-                'message': '对手提议和棋，接受吗？'
+                'message': 'Opponent proposes a draw, do you accept?'
             })
 
             return True
@@ -287,7 +287,7 @@ class Game:
         if self.game_state['draw_proposer'] and responder == self.opponent_of(self.game_state['draw_proposer']):
 
             if accepted:
-                self.draw('和棋达成！')
+                self.draw('Draw agreed!')
                 update_elo_after_game(self.player1, self.player2, 0.5)
 
             else:
@@ -312,7 +312,7 @@ class Game:
                 return True
 
             send_command([opponent], 'takeback_request', {
-                'message': '对手请求悔棋，接受吗？'
+                'message': 'Opponent requests a takeback, do you accept?'
             })
 
             return True
@@ -325,30 +325,30 @@ class Game:
 
             if accepted:
 
-                # 检查是否有至少两步可以撤销
+                # Check if there are at least two moves to take back
                 if len(self.board.move_stack) >= 2:
-                    # 撤销双方最近的两步棋
-                    _ = self.board.pop()  # 撤销对手的一步
-                    _ = self.board.pop()  # 撤销自己的一步
+                    # Take back the last two moves of both players
+                    _ = self.board.pop()  # Take back opponent's move
+                    _ = self.board.pop()  # Take back own move
 
-                    # 恢复时间 (为双方都减去增量时间)
+                    # Restore time (subtract increment time for both)
                     self.player_times[0] -= self.step_increment_time
                     self.player_times[1] -= self.step_increment_time
                     self.start_time = time.time()
 
-                    # 轮到发起悔棋方重新走棋
+                    # It's the turn of the player who initiated the takeback
                     self.current_player_index = self.players.index(self.game_state['takeback_proposer'])
 
-                    # 通知双方
+                    # Notify both players
                     send_command(self.players, 'takeback_success', {})
 
                     self.send_board_state()
                     send_command([self.players[self.current_player_index]], 'go', {})
 
                 else:
-                    # 棋步不足,拒绝悔棋
+                    # Not enough moves, decline takeback
                     send_command([self.game_state['takeback_proposer']], 'takeback_declined', {
-                        'reason': '棋步不足，无法悔棋！'
+                        'reason': 'Not enough moves to take back!'
                     })
 
             else:

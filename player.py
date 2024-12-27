@@ -1,20 +1,21 @@
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from flask_socketio import send
+
 from dbc import load, upsert
 from share import get_logger
 
-# 定义常量
+# Constants definition
 DEFAULT_ELO = 1500
 MIN_LEVEL = 1
 MAX_LEVEL = 20
 ELO_K_FACTOR = 30
 
-# 类型别名定义
+# Type alias definition
 PlayerData = Dict[str, Any]
 JoinInfo = Tuple[str, str]
 
-# 缓存
+# Cache
 join_cache: Dict[str, JoinInfo] = {}
 player_cache: Dict[str, PlayerData] = {}
 
