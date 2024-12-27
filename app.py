@@ -7,7 +7,7 @@ from typing import List, Optional
 from flask import Flask, request
 
 from game import Game
-from player import join, level_of, player_of, update_elo
+from player import join, level_of, player_of, update_elo, update_elo_after_game
 from share import (create_socketio, get_logger, running, send_command,
                    send_message)
 
@@ -319,7 +319,42 @@ def find_game(sid: str) -> Optional[Game]:
     return None
 
 
+def timer_task():
+
+    threading.current_thread().name = 'timer_task'
+
+    while True:
+
+        running.socketio.sleep(1)
+        
+        for game in running.games:
+            if  game.is_game_over:
+                continue
+
+            game.update_timer()
+
+            current = game.players[game.current_player_index]
+            opponent = game.opponent_of(current)
+
+            current_time = int(game.player_times[game.current_player_index])
+            opponent_time = int(game.player_times[(game.current_player_index + 1) % 2])
+
+            if current_time < 0 or opponent_time < 0:
+                loser = current if current_time < 0 else opponent
+                winner = game.opponent_of(loser)
+
+                game.declare_loser([loser], 'You are out of time!')
+                game.declare_winner([winner], 'Opponent is out of time!')
+
+                update_elo_after_game(winner, loser, 1)
+
+            else:
+                send_command([current], 'timer', {'mine': current_time, 'opponent': opponent_time})
+                send_command([opponent], 'timer', {'mine': opponent_time, 'opponent': current_time})
+
+
 if __name__ == '__main__':
     logger.info('Starting server...')
     socketio.start_background_task(target=match_players)
+    socketio.start_background_task(target=timer_task)
     socketio.run(app, host='0.0.0.0', port=8888)

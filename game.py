@@ -37,8 +37,7 @@ class Game:
     def __init__(self, pair: List[str], total_time: int, step_increment_time: int, bot_sid=None):
 
         self.players = pair
-        self.player1 = self.players[0]
-        self.player2 = self.players[1]
+        self.player1, self.player2 = self.players[0], self.players[1]
         self.game_id = hash(self.player1) + hash(self.player2)
 
         self.player_times = [total_time, total_time]
@@ -49,13 +48,7 @@ class Game:
 
         self.board = chess.Board()
         self.is_game_over = False
-
-        self.game_state = {
-            'is_over': False,
-            'previous_move': None,
-            'draw_proposer': None,
-            'takeback_proposer': None
-        }
+        self.game_state = {'draw_proposer': None, 'takeback_proposer': None}
 
         self.bot_sid = bot_sid
         self.start_game()
@@ -63,8 +56,6 @@ class Game:
     def start_game(self) -> None:
 
         self.start_time = time.time()
-        running.socketio.start_background_task(target=self.timer_task)
-
         self.send_board_state()
 
         if self.bot_sid and self.players[self.current_player_index] == self.bot_sid:
@@ -73,34 +64,6 @@ class Game:
             send_command([self.players[self.current_player_index]], 'go', {})
 
         logger.info(f'Waiting for player to make a move, game ID = {self.game_id}')
-
-    def timer_task(self):
-
-        threading.current_thread().name = f'timer_task_{self.game_id}'
-
-        while not self.is_game_over:
-
-            running.socketio.sleep(1)
-            self.update_timer()
-
-            current = self.players[self.current_player_index]
-            opponent = self.opponent_of(current)
-
-            current_time = int(self.player_times[self.current_player_index])
-            opponent_time = int(self.player_times[(self.current_player_index + 1) % 2])
-
-            if current_time < 0 or opponent_time < 0:
-                loser = current if current_time < 0 else opponent
-                winner = self.opponent_of(loser)
-
-                self.declare_loser([loser], 'You are out of time!')
-                self.declare_winner([winner], 'Opponent is out of time!')
-
-                update_elo_after_game(winner, loser, 1)
-
-            else:
-                send_command([current], 'timer', {'mine': current_time, 'opponent': opponent_time})
-                send_command([opponent], 'timer', {'mine': opponent_time, 'opponent': current_time})
 
     def update_timer(self):
         # Calculate elapsed time based on current time and subtract it from current player's remaining time
@@ -222,7 +185,7 @@ class Game:
     def game_over(self):
         logger.info(f'The game has ended. ID = {self.game_id}')
         send_command(self.players, 'game_over', {})
-        
+
         self.is_game_over = True
         running.games.remove(self)
 
