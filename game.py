@@ -1,5 +1,4 @@
 import platform
-import threading
 import time
 from typing import Dict, List
 

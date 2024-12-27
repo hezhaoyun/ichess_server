@@ -15,7 +15,6 @@ class running:
 
 
 def create_socketio(app: Flask):
-
     if running.socketio is None:
         running.socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
 
@@ -23,19 +22,16 @@ def create_socketio(app: Flask):
 
 
 def send_message(sids: List[str], message: str):
-
     thread_name = threading.current_thread().name
 
     # message privately everyone on the list
     if thread_name.startswith('timer_task') or thread_name == 'match_players':
-
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
             running.socketio.send(message, to=sid)
 
     else:
-
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
@@ -43,18 +39,15 @@ def send_message(sids: List[str], message: str):
 
 
 def send_command(sids: List[str], event: str, data: dict):
-
     thread_name = threading.current_thread().name
 
     if thread_name.startswith('timer_task') or thread_name == 'match_players':
-
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
             running.socketio.emit(event, data, to=sid)
 
     else:
-
         for sid in sids:
             if sid.startswith('bot_'):
                 continue
