@@ -35,7 +35,6 @@ class Game:
     stockfish_pool = StockfishPool(STOCKFISH_PATH, max_size=5)  # Shared pool
 
     def __init__(self, pair: List[str], total_time: int, step_increment_time: int, bot_sid=None):
-
         self.players = pair
         self.player1, self.player2 = self.players[0], self.players[1]
         self.game_id = hash(self.player1) + hash(self.player2)
@@ -54,7 +53,6 @@ class Game:
         self.start_game()
 
     def start_game(self) -> None:
-
         self.start_time = time.time()
         self.send_board_state()
 
@@ -92,7 +90,6 @@ class Game:
     def on_move(self, move: Dict[str, str], player: str) -> bool:
 
         if 'move' in move and self.verify_move(move['move']):
-
             self.make_move(move['move'], self.opponent_of(player))
             self.player_times[self.current_player_index] += self.step_increment_time
 
@@ -114,7 +111,6 @@ class Game:
         send_command([opponent], 'move', {'move': self.board.peek().uci()})
 
     def after_move(self):
-
         if not self.check_players_connected():
             return self.handle_disconnection()
 
@@ -153,7 +149,6 @@ class Game:
         update_elo_after_game(winner, player, 1)
 
     def check_game_end(self) -> bool:
-
         if self.board.is_checkmate():
             self.handle_checkmate()
             return True
@@ -171,7 +166,6 @@ class Game:
         return False
 
     def prepare_next_turn(self) -> None:
-
         self.send_board_state()
         self.current_player_index = (self.current_player_index + 1) % 2
 
@@ -226,9 +220,7 @@ class Game:
             update_elo_after_game(self.player1, self.player2, 1)
 
     def on_draw_proposal(self, proposer: str) -> bool:
-
         if self.game_state['draw_proposer'] is None:
-
             self.game_state['draw_proposer'] = proposer
             opponent = self.opponent_of(proposer)
 
@@ -246,9 +238,7 @@ class Game:
         return False
 
     def on_draw_response(self, responder: str, accepted: bool) -> bool:
-
         if self.game_state['draw_proposer'] and responder == self.opponent_of(self.game_state['draw_proposer']):
-
             if accepted:
                 self.draw('Draw agreed!')
                 update_elo_after_game(self.player1, self.player2, 0.5)
@@ -263,9 +253,7 @@ class Game:
         return False
 
     def on_takeback_proposal(self, proposer: str) -> bool:
-
         if self.game_state['takeback_proposer'] is None and len(self.board.move_stack) > 0:
-
             self.game_state['takeback_proposer'] = proposer
             opponent = self.opponent_of(proposer)
 
@@ -283,9 +271,7 @@ class Game:
         return False
 
     def on_takeback_response(self, responder: str, accepted: bool) -> bool:
-
         if self.game_state['takeback_proposer'] and responder == self.opponent_of(self.game_state['takeback_proposer']):
-
             if accepted:
 
                 # Check if there are at least two moves to take back

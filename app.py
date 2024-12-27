@@ -161,8 +161,6 @@ def on_message(data):
 WELCOME_MESSAGE = 'Welcome to Chessroad!'
 SERVER_SECRET = 'chessroad-up-up-day-day'
 
-# Matching system constants
-
 
 class MatchConfig:
     DIFF_INIT = 1          # Initial level difference
@@ -176,8 +174,6 @@ class MatchConfig:
         "Rising Star", "Chess Proficient", "Chess Virtuoso",
         "Chess Champion", "Chess Phenomenon"
     ]
-
-# Game configuration
 
 
 class GameConfig:
@@ -320,15 +316,13 @@ def find_game(sid: str) -> Optional[Game]:
 
 
 def timer_task():
-
     threading.current_thread().name = 'timer_task'
 
     while True:
-
         running.socketio.sleep(1)
-        
+
         for game in running.games:
-            if  game.is_game_over:
+            if game.is_game_over:
                 continue
 
             game.update_timer()
