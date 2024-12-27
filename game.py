@@ -1,3 +1,4 @@
+import platform
 import threading
 import time
 from typing import Dict, List
@@ -7,17 +8,31 @@ import chess.engine
 
 from player import level_of, player_of, update_elo_after_game
 from share import get_logger, running, send_command, send_message
+from stockfish_pool import StockfishPool
 
-# for mac with apple silicon
-STOCKFISH_PATH = "./stockfish/apple-silicon"
+STOCKFISH_PATH_LINUX_POPCNT = './stockfish/linux-popcnt'
+STOCKFISH_PATH_LINUX_AVX2 = './stockfish/linux-avx2'  # faster than popcnt
+STOCKFISH_PATH_MAC_APPLE_SILICON = './stockfish/apple-silicon'
 
-# for linux with popcnt (slower than avx2)
-STOCKFISH_PATH = "./stockfish/linux-popcnt"
 
 logger = get_logger(__name__)
 
+# 判断 CPU 类型并设置 Stockfish 路径
+if platform.system() == 'Linux':
+    if 'avx2' in platform.uname().machine:
+        STOCKFISH_PATH = STOCKFISH_PATH_LINUX_AVX2
+    else:
+        STOCKFISH_PATH = STOCKFISH_PATH_LINUX_POPCNT
+
+elif platform.system() == 'Darwin':
+    STOCKFISH_PATH = STOCKFISH_PATH_MAC_APPLE_SILICON
+
+else:
+    raise Exception('不支持的操作系统')
+
 
 class Game:
+    stockfish_pool = StockfishPool(STOCKFISH_PATH, max_size=5)  # 共享池
 
     def __init__(self, pair: List[str], total_time: int, step_increment_time: int, bot_sid=None):
 
@@ -43,21 +58,7 @@ class Game:
         }
 
         self.bot_sid = bot_sid
-        self.engine = None
-
-        self.setup_bot(bot_sid)
-
         self.start_game()
-
-    def setup_bot(self, bot_sid: str) -> None:
-
-        if not bot_sid:
-            return
-
-        self.engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-        bot_player = player_of(bot_sid)
-        bot_level = level_of(bot_player['elo'])
-        self.engine.configure({"Skill Level": bot_level})
 
     def start_game(self) -> None:
 
@@ -115,9 +116,15 @@ class Game:
         logger.info(self.board)
 
     def make_bot_move(self) -> None:
+        # 获取引擎
+        level = level_of(player_of(self.bot_sid)['elo'])
+        engine = Game.stockfish_pool.get_engine(level)
 
-        result = self.engine.play(self.board, chess.engine.Limit(time=1.0))
+        result = engine.play(self.board, chess.engine.Limit(time=1.0))
         self.on_move({'move': str(result.move)}, self.bot_sid)
+
+        # 思考后返还引擎
+        Game.stockfish_pool.return_engine(engine)
 
     def on_move(self, move: Dict[str, str], player: str) -> bool:
 
@@ -214,10 +221,9 @@ class Game:
 
     def game_over(self):
         logger.info(f'The game has ended. ID = {self.game_id}')
-
         send_command(self.players, 'game_over', {})
+        
         self.is_game_over = True
-
         running.games.remove(self)
 
         self.return_to_lobby_after_game()
@@ -356,7 +362,3 @@ class Game:
 
     def opponent_of(self, player: str) -> str:
         return self.player2 if player == self.player1 else self.player1
-
-    def __del__(self):
-        if self.engine:
-            self.engine.quit()
