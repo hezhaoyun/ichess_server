@@ -78,13 +78,10 @@ def on_match(data):
         return
 
     time_control_index = data.get('time_control', 0)  # 默认使用第一个时间规则
-    
+
     # 将玩家加入等待队列，同时保存他们选择的时间规则
     if request.sid not in running.waiting_players:
-        running.waiting_players[request.sid] = {
-            'join_time': time.time(),
-            'time_control': time_control_index
-        }
+        running.waiting_players[request.sid] = {'join_time': time.time(), 'time_control': time_control_index}
 
 
 @socketio.on('move')
@@ -189,7 +186,7 @@ class GameConfig:
         (15 * 60, 10),  # 15分钟+10秒增量
         (30 * 60, 15)   # 30分钟+15秒增量
     ]
-    
+
     @staticmethod
     def get_time_control(index: int) -> tuple:
         if 0 <= index < len(GameConfig.TIME_CONTROLS):
@@ -228,15 +225,15 @@ def process_matching_queue():
     current_time = time.time()
     to_remove = []  # Players to be removed from the waiting queue
 
-    for sid, join_time in running.waiting_players.items():
+    for sid, data in running.waiting_players.items():
         if sid in to_remove:
             continue
 
-        time_waited = current_time - join_time
-        if try_match_player(sid, time_waited, to_remove):
+        time_waited = current_time - data['join_time']
+        if try_match_player(sid, time_waited, to_remove, data['time_control']):
             continue
 
-        if try_create_bot_match(sid, time_waited, to_remove):
+        if try_create_bot_match(sid, time_waited, to_remove, data['time_control']):
             continue
 
     # Clean up matched players
@@ -244,10 +241,9 @@ def process_matching_queue():
         running.waiting_players.pop(sid, None)
 
 
-def try_match_player(sid: str, time_waited: float, to_remove: List[str]) -> bool:
+def try_match_player(sid: str, time_waited: float, to_remove: List[str], time_control_index: int) -> bool:
     """Try to match a player with an opponent"""
     level = level_of(player_of(sid)['elo'])
-    time_control = running.waiting_players[sid]['time_control']
 
     allowed_difference = min(
         MatchConfig.DIFF_INIT + (MatchConfig.DIFF_INCREMENT * int(time_waited / 5)),
@@ -258,11 +254,11 @@ def try_match_player(sid: str, time_waited: float, to_remove: List[str]) -> bool
             continue
 
         # 检查时间规则是否匹配
-        if other_data['time_control'] != time_control:
+        if other_data['time_control'] != time_control_index:
             continue
 
         if is_suitable_opponent(level, other_sid, allowed_difference):
-            create_match([sid, other_sid], to_remove, time_control)
+            create_match([sid, other_sid], to_remove, time_control_index)
             return True
 
     return False
@@ -274,11 +270,11 @@ def is_suitable_opponent(player_level: int, opponent_sid: str, allowed_differenc
     return abs(player_level - opponent_level) <= allowed_difference
 
 
-def try_create_bot_match(sid: str, time_waited: float, to_remove: List[str]) -> bool:
+def try_create_bot_match(sid: str, time_waited: float, to_remove: List[str], time_control_index: int) -> bool:
     """Try to create a bot match"""
     if time_waited > MatchConfig.BOT_WAIT_TIME and sid not in to_remove:
         bot_sid = create_bot_player(sid)
-        create_match([sid, bot_sid], to_remove, is_bot=bot_sid)
+        create_match([sid, bot_sid], to_remove, time_control_index, is_bot=bot_sid)
         return True
 
     return False
@@ -299,20 +295,20 @@ def create_bot_player(player_sid: str) -> str:
     return bot_sid
 
 
-def create_match(pair: List[str], to_remove: List[str], time_control_index: int = 0, is_bot: str = None):
+def create_match(pair: List[str], to_remove: List[str], time_control_index: int, is_bot: str = None):
     """Create a match and notify players"""
     to_remove.extend([p for p in pair if not p.startswith('bot_')])
     send_message(pair, 'Match found.. Connecting')
     make_game(pair, time_control_index=time_control_index, is_bot=is_bot)
 
 
-def make_game(pair: List[str], time_control_index: int = 0, is_bot: str = None):
+def make_game(pair: List[str], time_control_index: int, is_bot: str = None):
     """Create a game and notify players"""
     shuffle(pair)
 
     white, black = pair[0], pair[1]
     white_player, black_player = player_of(white), player_of(black)
-    
+
     total_time, increment = GameConfig.get_time_control(time_control_index)
 
     # Sending over the command codes to initialize game modes on clients
